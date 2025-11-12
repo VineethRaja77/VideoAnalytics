@@ -1,0 +1,136 @@
+
+
+Prompt:
+
+ you are  a senior UX/UI designer with 6 years of experience specializing in designing modern, data-driven dashboards and video management interfaces. I need to design a CRM prototype for a Video Management System (VMS) named Hyperspark.
+
+ The visual foundation should match the provided sample login page — same style, color scheme, layout structure, and input field design — but rebranded with the Hyperspark name and logo. The goal is to create a clean, intuitive, and operationally efficient user experience for camera monitoring, management, and playback.
+
+ After the login screen, the user should land on the Hyperspark Dashboard, which will have three primary modules accessible via a left-side navigation bar: Live, Add Camera, and Playback. The interface should maintain a professional, minimal aesthetic with a focus on usability, visibility, and real-time control.
+
+ ---
+
+ 1️⃣ Login Screen (Entry Point)
+
+  Replicate the same visual appearance and structure as the sample login page.
+  Replace all branding with Hyperspark.
+  Include fields for username and password, a "Remember Me" checkbox, and a "Forgot Password" link.
+  The “Sign In” button leads to the main dashboard.
+  Keep a balanced, centered layout and clear focus indicators for accessibility.
+
+ ---
+
+ 2️⃣ Main Dashboard Layout
+
+  Use a three-part layout:
+
+    Left navigation bar: Logo and menu items — Live, Add Camera, Playback.
+    Top header bar: Search, notifications, and user profile icon.
+    Main content area: Displays the selected module’s UI.
+  The design language should be clean, high-contrast (preferably dark mode), and suitable for monitoring environments.
+  Maintain consistent spacing, color hierarchy, and typography across all modules.
+
+ ---
+
+ 3️⃣ Live Module (Default View)
+
+  Displays all added cameras in a grid layout with live thumbnails or status cards.
+  Each camera card shows:
+
+    Camera name
+    Channel ID
+    Connection status (green = online, red = offline, grey = inactive)
+    Optional quick actions: View live, audio toggle, snapshot, fullscreen.
+  When a camera is clicked, open a live feed view showing:
+
+    Real-time video stream
+    Camera details (resolution, FPS, last active time)
+    PTZ (Pan, Tilt, Zoom) control icons
+    Stream quality selector (auto/high/medium/low)
+    Audio toggle and fullscreen options.
+  Include smooth transitions between camera cards and live player view.
+
+ ---
+
+ 4️⃣ Add Camera Module
+
+  A clean, form-based interface to register new camera streams.
+  Input fields include:
+
+    Channel ID
+    Camera Name
+    RTSP/Stream URL
+    Stream Type (RTSP, ONVIF, HLS)
+    Username, Password
+    Location or Group
+    Recording Policy (continuous, schedule, motion-based)
+  Include a “Test Connection” button to verify the stream before saving.
+  Use real-time inline validation for missing or invalid fields.
+  After successful testing, allow saving the camera — it should automatically appear in the Live module.
+  Visually show test results: “Connection successful” (green) or “Connection failed” (red).
+
+ ---
+
+ 5️⃣ Playback Module
+
+  Allow users to review previously recorded footage.
+  UI should contain:
+
+    Camera selector dropdown (choose from added cameras).
+    Date and Time range pickers.
+    Play/Pause, Speed control, Frame-by-frame, and Export options.
+    Interactive timeline scrubber with markers for motion or event triggers.
+  On selecting a camera and time range, display recorded video in the player area.
+  Users should be able to scrub through the timeline, play at different speeds, and export clips for evidence.
+  Use smooth transitions and clear status indicators during video loading.
+
+ ---
+
+ 6️⃣ Design System & Visual Language
+
+  Maintain a consistent design system with unified color tokens, icons, and components.
+  Colors:
+
+    Primary: Hyperspark Blue (`#0B63FF`)
+    Success: Green (`#34D399`)
+    Error: Red (`#F87171`)
+    Background: Dark grey or navy (`#0F172A`)
+  Typography: Modern sans-serif, medium weight for titles, regular for body.
+  Use simple motion transitions for navigation and modal popups.
+  Provide clear empty states:
+
+    Live: “No cameras added yet.”
+    Playback: “Select a camera and date to view footage.”
+
+ ---
+
+ 7️⃣ Interaction & User Flow
+
+  Login → Dashboard (Live view)
+  Live → Add Camera → Back to Live (new camera appears).
+  Live → Playback → Select Camera → Play recorded video.
+  Transitions should be fluid, giving a sense of continuity between sections.
+  All critical actions should provide immediate visual feedback (loading spinners, success ticks, error banners).
+
+ ---
+
+ 8️⃣ Prototype Objective
+
+  Create a high-fidelity, clickable prototype showing complete user journeys: Login → Live → Add Camera → Playback.
+  Demonstrate interaction logic, state changes, and navigation flow.
+  Keep the design realistic and ready for future handoff to developers.
+  Ensure it visually communicates the system’s reliability, modernity, and simplicity — reflecting a professional-grade VMS interface.
+
+ ---
+
+ 9️⃣ Deliverables Expected:
+
+  Interactive prototype (Login, Live, Add Camera, Playback).
+  Style guide (color tokens, typography, button styles, input field design).
+  Navigation and component consistency across all screens.
+  Demonstration of loading, error, and empty states.
+
+ The end result should look and feel like a fully functional, production-ready Hyperspark Video Management CRM, combining the aesthetics of enterprise security dashboards with the usability of modern SaaS applications.
+
+---
+
