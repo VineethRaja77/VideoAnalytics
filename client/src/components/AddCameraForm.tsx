@@ -40,7 +40,7 @@ export default function AddCameraForm({ onSave, onCancel }: AddCameraFormProps) 
   const handleSave = () => {
     onSave({
       channelId,
-      cameraName,
+      name: cameraName,
       streamUrl,
       streamType,
       username,

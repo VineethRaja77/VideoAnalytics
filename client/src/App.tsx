@@ -13,31 +13,56 @@ import PlaybackView from "@/components/PlaybackView";
 import LivePlayerModal from "@/components/LivePlayerModal";
 import { Camera } from "@/components/CameraCard";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 type View = "login" | "live" | "add-camera" | "playback";
 
-function App() {
-  const [currentView, setCurrentView] = useState<View>("login");
-  const [cameras, setCameras] = useState<Camera[]>([
-    { id: "1", name: "CP IP Cam", channelId: "4", status: "online" },
-    { id: "2", name: "CP IP Cam", channelId: "5", status: "online" },
-    { id: "3", name: "CP IP Cam", channelId: "6", status: "offline" },
-    { id: "4", name: "Channel4", channelId: "7", status: "inactive" },
-    { id: "5", name: "Channel5", channelId: "8", status: "online" },
-    { id: "6", name: "Channel6", channelId: "9", status: "inactive" },
-  ]);
+function Dashboard() {
+  const [currentView, setCurrentView] = useState<View>("live");
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const { toast } = useToast();
 
-  const handleLogin = (username: string, password: string, remember: boolean) => {
-    console.log("Login:", { username, password, remember });
-    setCurrentView("live");
-    toast({
-      title: "Welcome to Hyperspark",
-      description: "Successfully logged in",
-    });
-  };
+  // Fetch cameras from API
+  const { data: cameras = [], refetch: refetchCameras } = useQuery<Camera[]>({
+    queryKey: ["/api/cameras"],
+  });
+
+  const createCameraMutation = useMutation({
+    mutationFn: async (cameraData: any) => {
+      console.log("Creating camera with data:", cameraData);
+      const response = await fetch("/api/cameras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cameraData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Camera creation failed:", errorData);
+        throw new Error(errorData.error || "Failed to create camera");
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      console.log("Camera created successfully:", data);
+      refetchCameras();
+      setCurrentView("live");
+      toast({
+        title: "Camera Added",
+        description: `${data.name} has been added successfully`,
+      });
+    },
+    onError: (error: any) => {
+      console.error("Camera creation error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add camera",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleNavigate = (path: string) => {
     const viewMap: Record<string, View> = {
@@ -75,30 +100,8 @@ function App() {
   };
 
   const handleSaveCamera = (cameraData: any) => {
-    const newCamera: Camera = {
-      id: String(cameras.length + 1),
-      name: cameraData.cameraName,
-      channelId: cameraData.channelId,
-      status: "online",
-    };
-    setCameras([...cameras, newCamera]);
-    setCurrentView("live");
-    toast({
-      title: "Camera Added",
-      description: `${cameraData.cameraName} has been added successfully`,
-    });
+    createCameraMutation.mutate(cameraData);
   };
-
-  if (currentView === "login") {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <LoginPage onLogin={handleLogin} />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    );
-  }
 
   const style = {
     "--sidebar-width": "16rem",
@@ -108,44 +111,97 @@ function App() {
   const viewPath = currentView === "live" ? "/live" : currentView === "add-camera" ? "/add-camera" : "/playback";
 
   return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-screen w-full overflow-hidden">
+        <AppSidebar currentPath={viewPath} onNavigate={handleNavigate} />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <TopHeader notificationCount={3} />
+          <main className="flex-1 overflow-auto p-6">
+            {currentView === "live" && (
+              <LiveView
+                cameras={cameras}
+                onViewCamera={handleViewCamera}
+                onAudioToggle={handleAudioToggle}
+                onSnapshot={handleSnapshot}
+                onFullscreen={handleFullscreen}
+                onAddCamera={() => setCurrentView("add-camera")}
+              />
+            )}
+            {currentView === "add-camera" && (
+              <AddCameraForm
+                onSave={handleSaveCamera}
+                onCancel={() => setCurrentView("live")}
+              />
+            )}
+            {currentView === "playback" && <PlaybackView cameras={cameras} />}
+          </main>
+        </div>
+      </div>
+      <LivePlayerModal
+        camera={selectedCamera}
+        isOpen={isPlayerOpen}
+        onClose={() => setIsPlayerOpen(false)}
+      />
+    </SidebarProvider>
+  );
+}
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { toast } = useToast();
+
+  const loginMutation = useMutation({
+    mutationFn: async ({ username, password }: { username: string; password: string }) => {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Invalid credentials");
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsAuthenticated(true);
+      toast({
+        title: "Welcome to Hyperspark",
+        description: "Successfully logged in",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Login Failed",
+        description: "Invalid username or password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleLogin = (username: string, password: string, remember: boolean) => {
+    loginMutation.mutate({ username, password });
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage onLogin={handleLogin} />
+    );
+  }
+
+  return <Dashboard />;
+}
+
+function AppWrapper() {
+  return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex h-screen w-full overflow-hidden">
-            <AppSidebar currentPath={viewPath} onNavigate={handleNavigate} />
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <TopHeader notificationCount={3} />
-              <main className="flex-1 overflow-auto p-6">
-                {currentView === "live" && (
-                  <LiveView
-                    cameras={cameras}
-                    onViewCamera={handleViewCamera}
-                    onAudioToggle={handleAudioToggle}
-                    onSnapshot={handleSnapshot}
-                    onFullscreen={handleFullscreen}
-                    onAddCamera={() => setCurrentView("add-camera")}
-                  />
-                )}
-                {currentView === "add-camera" && (
-                  <AddCameraForm
-                    onSave={handleSaveCamera}
-                    onCancel={() => setCurrentView("live")}
-                  />
-                )}
-                {currentView === "playback" && <PlaybackView cameras={cameras} />}
-              </main>
-            </div>
-          </div>
-          <LivePlayerModal
-            camera={selectedCamera}
-            isOpen={isPlayerOpen}
-            onClose={() => setIsPlayerOpen(false)}
-          />
-        </SidebarProvider>
+        <App />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
 }
 
-export default App;
+export default AppWrapper;
