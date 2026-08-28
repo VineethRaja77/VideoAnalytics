@@ -1,0 +1,16 @@
+# One-model PPE + Person detector (pose stays a separate yolo11-pose model).
+# 9 classes: person + 4 PPE items, each item with a positive and a negative class.
+path: /home/hyperspark/VMS/VMS/VMS_PRODUCTION/train/dataset
+train: images/train
+val: images/val
+
+names:
+  0: person
+  1: helmet
+  2: no_helmet
+  3: vest
+  4: no_vest
+  5: gloves
+  6: no_gloves
+  7: boots
+  8: no_boots

@@ -1,6 +1,78 @@
+# ---- Secrets / credentials (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+auto.crt
+
+# ---- Node / build ----
 node_modules
 dist
-.DS_Store
+build
 server/public
 vite.config.ts.*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ---- Datasets (multi-GB, not for git) ----
+data/
+train/dataset/*
+!train/dataset/data.yaml
+train/site_cvat/
+train/site_dedup/
+train/public_raw/
+train/public_labeled/
+train/frames/
+train/frames_labeled/
+train/runs/
+train_vehicle/frames_labeled/
+
+# ---- Model weights & training output ----
+models/*
+!models/README.md
+!models/manifest.json
+train_weights/
+outputs/
+runs/
+
+# ---- Weight / checkpoint file types ----
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
+*.weights
+*.pb
+*.tflite
+*.h5
+*.npy
+*.npz
+
+# ---- Media ----
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.webm
+
+# ---- Archives ----
+*.zip
+*.tar
 *.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# ---- Logs / OS ----
+*.log
+logs/
+.DS_Store
+Thumbs.db

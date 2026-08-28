@@ -1,0 +1,16 @@
+[Unit]
+Description=MediaMTX media server (VMS live + recording ingest)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mediamtx /etc/vms/mediamtx.yml
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+User=hyperspark
+Group=hyperspark
+
+[Install]
+WantedBy=multi-user.target

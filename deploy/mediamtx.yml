@@ -1,0 +1,60 @@
+logLevel: info
+logDestinations: [file]
+logFile: /var/log/vms/mediamtx.log
+
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# All legitimate traffic to MediaMTX originates from this same box:
+# recordingWorker.ts's GStreamer recorders and transcode publishers connect
+# via 127.0.0.1, and the Node app proxies all browser WHEP/HLS requests
+# through 127.0.0.1 too (see server/index.ts's /whep and /hls-live proxies).
+# Camera pulls (paths' `source: rtsp://...`) are MediaMTX's own outbound
+# connections and are not subject to this at all. Restricting the only
+# user to localhost means anyone else hitting these ports directly (no
+# credentials needed to bypass, since the previous default was password-
+# less "any") gets denied outright.
+authInternalUsers:
+  - user: any
+    pass: ""
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  # Defining a custom authInternalUsers list replaces MediaMTX's defaults
+  # entirely, including the built-in localhost-only admin entry for the
+  # Control API — mediamtxController.ts (Node, on this same box) needs
+  # this to manage paths, so it must be restored explicitly here.
+  - user: any
+    pass: ""
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigins: ["https://vms.hyperspark.in"]
+# This box's public IP (103.84.106.254) is directly on its network interface
+# (not NAT'd), so MediaMTX's default webrtcIPsFromInterfaces: true already
+# advertises it correctly as an ICE host candidate — webrtcAdditionalHosts
+# is only needed if that stops being true (e.g. moving behind cloud NAT).
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigins: ["https://vms.hyperspark.in"]
+hlsVariant: lowLatency
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+
+# Paths are intentionally NOT listed here — mediamtxController.ts manages
+# them all dynamically via the Control API above (path add/replace/delete
+# on camera create/update/delete), never a static YAML edit + restart.
+paths:
+  all_others:

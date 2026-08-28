@@ -1,0 +1,12 @@
+{
+  "ppe": {
+    "weights/ppe_rfdetr.onnx": "145cf0a4ebce66269197cce1041001c57fced71f9883b2fc8b4c483b4c68d17b"
+  },
+  "vehicle": {
+    "weights/vehicle_rfdetr.onnx": "99eb1b04dc5bf8a59609eedd990c6b3ef58609988dae0b7438c1cd849abfb6fd"
+  },
+  "face": {
+    "weights/auraface_glintr100.onnx": "a7933ea5330113b01c9b60351d8f4c33003f145d8470ac5f0e52ee2effe25c60",
+    "weights/face_detection_yunet_2023mar.onnx": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+  }
+}

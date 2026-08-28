@@ -1,0 +1,481 @@
+<title>VMS Model Inventory</title>
+<style>
+  :root{
+    --ground:#f7f8f9; --surface:#ffffff; --surface-2:#f1f3f5;
+    --ink:#12171d; --ink-2:#4a5560; --ink-3:#78848f;
+    --rule:#dde2e6; --rule-2:#e9edf0;
+    --accent:#b56a10; --accent-soft:#f5e9d8;
+    --ok:#2c6e52; --ok-bg:#e7f1ec;
+    --warn:#a8701a; --warn-bg:#f8efdf;
+    --stop:#a8433a; --stop-bg:#f9e8e6;
+    --font-display:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-body:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1319; --surface:#151b23; --surface-2:#1b232c;
+      --ink:#e6ebf0; --ink-2:#93a1ae; --ink-3:#6c7986;
+      --rule:#232c36; --rule-2:#1d252e;
+      --accent:#e0913a; --accent-soft:#2a2015;
+      --ok:#4d9c78; --ok-bg:#152520;
+      --warn:#d1a052; --warn-bg:#282013;
+      --stop:#d4736a; --stop-bg:#2a1917;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0e1319; --surface:#151b23; --surface-2:#1b232c;
+    --ink:#e6ebf0; --ink-2:#93a1ae; --ink-3:#6c7986;
+    --rule:#232c36; --rule-2:#1d252e;
+    --accent:#e0913a; --accent-soft:#2a2015;
+    --ok:#4d9c78; --ok-bg:#152520;
+    --warn:#d1a052; --warn-bg:#282013;
+    --stop:#d4736a; --stop-bg:#2a1917;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--font-body); font-size:17px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 28px 96px}
+
+  /* ---------- masthead ---------- */
+  .mast{padding:72px 0 40px; border-bottom:2px solid var(--ink)}
+  .eyebrow{
+    font-family:var(--font-display); font-size:11.5px; font-weight:650;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--accent);
+    margin:0 0 18px;
+  }
+  h1{
+    font-family:var(--font-display); font-weight:750; letter-spacing:-.028em;
+    font-size:clamp(38px,6vw,62px); line-height:1.02; margin:0 0 20px;
+    text-wrap:balance;
+  }
+  .standfirst{
+    font-size:20px; line-height:1.55; color:var(--ink-2); margin:0;
+    max-width:60ch;
+  }
+
+  /* ---------- summary strip ---------- */
+  .strip{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+    gap:1px; background:var(--rule); border:1px solid var(--rule);
+    margin:36px 0 0;
+  }
+  .stat{background:var(--surface); padding:18px 20px}
+  .stat .n{
+    font-family:var(--font-display); font-size:30px; font-weight:700;
+    letter-spacing:-.02em; font-variant-numeric:tabular-nums; display:block;
+    line-height:1.1;
+  }
+  .stat .l{
+    font-family:var(--font-display); font-size:11px; font-weight:600;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3);
+    margin-top:5px; display:block;
+  }
+
+  /* ---------- sections ---------- */
+  section{padding-top:64px}
+  h2{
+    font-family:var(--font-display); font-weight:700; letter-spacing:-.02em;
+    font-size:30px; line-height:1.15; margin:0 0 8px; text-wrap:balance;
+  }
+  h3{
+    font-family:var(--font-display); font-weight:650; letter-spacing:-.012em;
+    font-size:20px; margin:34px 0 10px; text-wrap:balance;
+  }
+  .lede{color:var(--ink-2); margin:0 0 26px; max-width:66ch; font-size:17px}
+  p{max-width:66ch}
+  a{color:var(--accent)}
+
+  /* ---------- model cards ---------- */
+  .models{display:flex; flex-direction:column; gap:18px; margin-top:26px}
+  .model{
+    background:var(--surface); border:1px solid var(--rule);
+    display:grid; grid-template-columns:5px 1fr;
+  }
+  .model .stripe{background:var(--ink-3)}
+  .model.is-ok .stripe{background:var(--ok)}
+  .model.is-warn .stripe{background:var(--warn)}
+  .model.is-stop .stripe{background:var(--stop)}
+  .model .inner{padding:22px 26px 24px}
+  .model-head{
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:12px;
+    margin-bottom:4px;
+  }
+  .model-head .name{
+    font-family:var(--font-display); font-size:22px; font-weight:700;
+    letter-spacing:-.015em;
+  }
+  .model-head .file{
+    font-family:var(--font-mono); font-size:12.5px; color:var(--ink-3);
+  }
+  .badge{
+    font-family:var(--font-display); font-size:10.5px; font-weight:650;
+    letter-spacing:.09em; text-transform:uppercase; padding:4px 9px;
+    border-radius:2px; white-space:nowrap;
+  }
+  .badge.ok{background:var(--ok-bg); color:var(--ok)}
+  .badge.warn{background:var(--warn-bg); color:var(--warn)}
+  .badge.stop{background:var(--stop-bg); color:var(--stop)}
+  .badge.neutral{background:var(--surface-2); color:var(--ink-2)}
+  .model p{margin:10px 0 0; font-size:16px; color:var(--ink-2)}
+  .model p strong{color:var(--ink); font-weight:600}
+
+  .facts{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:14px 26px; margin-top:18px; padding-top:16px;
+    border-top:1px solid var(--rule-2);
+  }
+  .fact .k{
+    font-family:var(--font-display); font-size:10.5px; font-weight:600;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+    display:block; margin-bottom:3px;
+  }
+  .fact .v{
+    font-family:var(--font-mono); font-size:13.5px; color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------- tables ---------- */
+  .scroll{overflow-x:auto; margin:20px 0 0; border:1px solid var(--rule)}
+  table{border-collapse:collapse; width:100%; background:var(--surface); min-width:520px}
+  th,td{padding:11px 15px; text-align:left; border-bottom:1px solid var(--rule-2)}
+  thead th{
+    font-family:var(--font-display); font-size:11px; font-weight:650;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+    background:var(--surface-2); border-bottom:1px solid var(--rule);
+    white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td{font-size:14.5px; font-family:var(--font-display)}
+  td.mono,th.mono{font-family:var(--font-mono); font-size:13px; font-variant-numeric:tabular-nums}
+  td.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:13.5px; text-align:right}
+  .g{color:var(--ok); font-weight:600}
+  .a{color:var(--warn); font-weight:600}
+  .r{color:var(--stop); font-weight:600}
+
+  /* ---------- callout ---------- */
+  .note{
+    border-left:3px solid var(--accent); background:var(--accent-soft);
+    padding:16px 20px; margin:24px 0 0;
+  }
+  .note .t{
+    font-family:var(--font-display); font-size:11px; font-weight:650;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--accent);
+    display:block; margin-bottom:6px;
+  }
+  .note p{margin:0; font-size:16px; color:var(--ink-2)}
+  .note p + p{margin-top:10px}
+
+  code{
+    font-family:var(--font-mono); font-size:.88em;
+    background:var(--surface-2); padding:1px 5px; border-radius:2px;
+  }
+
+  ul{max-width:66ch; padding-left:20px}
+  li{margin:7px 0; color:var(--ink-2)}
+  li strong{color:var(--ink); font-weight:600}
+
+  footer{
+    margin-top:80px; padding-top:24px; border-top:1px solid var(--rule);
+    font-family:var(--font-display); font-size:13px; color:var(--ink-3);
+  }
+  @media (max-width:640px){
+    .wrap{padding:0 18px 64px}
+    .mast{padding:48px 0 32px}
+    body{font-size:16px}
+  }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Hyperspark VMS &middot; Build status</p>
+  <h1>Model Inventory</h1>
+  <p class="standfirst">Every detection model in the product: what it is trained on, what it scores, whether its licence chain permits commercial sale, and whether it is fit to put in front of a client.</p>
+
+  <div class="strip">
+    <div class="stat"><span class="n">6</span><span class="l">Analytics modules</span></div>
+    <div class="stat"><span class="n">4</span><span class="l">Trained models</span></div>
+    <div class="stat"><span class="n">26</span><span class="l">Licensable features</span></div>
+    <div class="stat"><span class="n">177</span><span class="l">Tests passing</span></div>
+    <div class="stat"><span class="n">0</span><span class="l">AGPL dependencies</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>The constraint that shaped everything</h2>
+  <p class="lede">Every component must be free of charge <em>and</em> legally usable inside a closed-source commercial product. That single rule decided the architecture.</p>
+
+  <p>The original models were trained with Ultralytics YOLO. Their licence is AGPL-3.0, and it explicitly covers <em>“the training code and the models produced by that training code.”</em> Exporting to ONNX does not escape it. Distributing an AGPL work entitles every recipient to the complete source of the whole application &mdash; incompatible with selling a closed-source VMS.</p>
+
+  <p>Everything was rebuilt on <strong>RF-DETR</strong> (Apache-2.0) running on <strong>onnxruntime</strong> (MIT), with <strong>supervision</strong> ByteTrack (MIT) for tracking. The verified chain:</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Component</th><th>Licence</th><th>Commercial</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">rfdetr</td><td class="mono">Apache-2.0</td><td class="g">Yes</td><td>Nano / Small / Medium / Large only</td></tr>
+        <tr><td class="mono">RF-DETR XLarge, 2XLarge</td><td class="mono">PML-1.0</td><td class="r">No</td><td>Requires a paid Roboflow plan &mdash; never use</td></tr>
+        <tr><td class="mono">DINOv2 backbone</td><td class="mono">Apache-2.0</td><td class="g">Yes</td><td>Was CC BY-NC; Meta relicensed Aug 2023</td></tr>
+        <tr><td class="mono">DINOv3</td><td class="mono">Meta licence</td><td class="r">No</td><td>Restrictive &mdash; do not “upgrade” the backbone</td></tr>
+        <tr><td class="mono">onnxruntime</td><td class="mono">MIT</td><td class="g">Yes</td><td>Runtime for every model</td></tr>
+        <tr><td class="mono">supervision</td><td class="mono">MIT</td><td class="g">Yes</td><td>Pinned <code>&lt;0.31</code> &mdash; ByteTrack removed in 0.31</td></tr>
+        <tr><td class="mono">opencv-python-headless</td><td class="mono">Apache-2.0</td><td class="g">Yes</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="t">Verified, not assumed</span>
+    <p>Licences were read from the source that actually serves the file &mdash; the Roboflow API, the HuggingFace card, the GitHub LICENSE. A mirror cannot grant a licence it does not hold, and a re-upload can lose or invent one. This cut both ways: one dataset was <em>wrongly excluded</em> because a HuggingFace mirror degraded “CC BY 4.0” to an ambiguous “cc”, and another was <em>correctly rejected</em> despite a plausible claim, because the copy in hand declared nothing.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Models</h2>
+  <p class="lede">Six analytics modules. Four carry a trained or pretrained model; two are pure image processing with no model at all.</p>
+
+  <div class="models">
+
+    <article class="model is-warn">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">PPE Compliance</span>
+          <span class="file">models/ppe/weights/ppe_rfdetr.onnx</span>
+          <span class="badge warn">Ships with limits</span>
+        </div>
+        <p>Detects people and safety equipment in one pass &mdash; helmet, vest, gloves, boots, and the <strong>absence</strong> of each. The negative classes are the product: “this worker has no helmet” is what a site buys.</p>
+        <p><strong>Helmet and vest are solid. Boots are not.</strong> <code>no_boots</code> scores AP 0.14 with precision 0.23 &mdash; roughly three in four alerts wrong. That is a dataset problem, not a training one: the licensed sources barely annotate missing boots.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">Architecture</span><span class="v">RF-DETR Small</span></div>
+          <div class="fact"><span class="k">Resolution</span><span class="v">672 &times; 672</span></div>
+          <div class="fact"><span class="k">Classes</span><span class="v">9</span></div>
+          <div class="fact"><span class="k">mAP@50</span><span class="v">0.771</span></div>
+          <div class="fact"><span class="k">mAP@50:95</span><span class="v">0.505</span></div>
+          <div class="fact"><span class="k">Size</span><span class="v">115 MB</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="model is-ok">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">Vehicle</span>
+          <span class="file">models/vehicle/weights/vehicle_rfdetr.onnx</span>
+          <span class="badge ok">Shipping</span>
+        </div>
+        <p>Eight vehicle types trained on <strong>BMD-45</strong> &mdash; 45,986 images from 3,679 CCTV cameras across Bengaluru. Indian traffic, real mounting angles, genuinely well matched to the market.</p>
+        <p>Verified end to end on real footage: 6 tracked vehicles, boxes matching the PyTorch checkpoint to <strong>1.39 px</strong>. Weakest pair is <code>truck</code> (0.61) and <code>lcv</code> (0.67), which confuse with each other &mdash; a size judgement that is genuinely ambiguous from a fixed camera.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">Architecture</span><span class="v">RF-DETR Small</span></div>
+          <div class="fact"><span class="k">Resolution</span><span class="v">512 &times; 512</span></div>
+          <div class="fact"><span class="k">Classes</span><span class="v">8 (9 pending)</span></div>
+          <div class="fact"><span class="k">mAP@50</span><span class="v">0.872</span></div>
+          <div class="fact"><span class="k">mAP@50:95</span><span class="v">0.732 EMA</span></div>
+          <div class="fact"><span class="k">Size</span><span class="v">114 MB</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="model is-ok">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">Face Recognition</span>
+          <span class="file">auraface_glintr100.onnx + yunet</span>
+          <span class="badge ok">Shipping</span>
+        </div>
+        <p>No training required. YuNet detects faces; AuraFace produces an embedding compared against an enrolled gallery by <strong>threshold</strong>, not softmax &mdash; which is what makes “unknown” a structurally possible answer rather than a nearest-match guess.</p>
+        <p>Face images are biometric personal data under India’s DPDP Act 2023. Every snapshot view is written to the audit trail, and embeddings are never stored in it.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">Detector</span><span class="v">YuNet 2023mar</span></div>
+          <div class="fact"><span class="k">Embedding</span><span class="v">AuraFace glintr100</span></div>
+          <div class="fact"><span class="k">Training</span><span class="v">none &mdash; pretrained</span></div>
+          <div class="fact"><span class="k">Size</span><span class="v">261 MB</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="model is-ok">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">Person</span>
+          <span class="file">models/person/weights/person_rfdetr.onnx</span>
+          <span class="badge ok">Shipping</span>
+        </div>
+        <p>Stock COCO-pretrained RF-DETR &mdash; nothing was trained. Person is COCO class 1. Seven licensable behaviours are built on top as rules, with no extra model: intrusion, people count, loitering, crowd density, queue dwell, tailgating and fall.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">Architecture</span><span class="v">RF-DETR (COCO)</span></div>
+          <div class="fact"><span class="k">Features</span><span class="v">7</span></div>
+          <div class="fact"><span class="k">Training</span><span class="v">none</span></div>
+          <div class="fact"><span class="k">Size</span><span class="v">114 MB</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="model is-ok">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">Camera Tamper &amp; Abandoned Object</span>
+          <span class="badge ok">Shipping</span>
+          <span class="badge neutral">No model</span>
+        </div>
+        <p>Tamper detection is pure image statistics &mdash; blur, edge density and a contrast-normalised scene comparison that is exactly invariant to a camera’s auto-gain, so a lighting change is not read as a covered lens.</p>
+        <p>Abandoned and removed object detection uses dual background subtraction at two learning rates. No weights, no GPU, nothing to checksum.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">Method</span><span class="v">image statistics</span></div>
+          <div class="fact"><span class="k">Features</span><span class="v">3</span></div>
+          <div class="fact"><span class="k">Weights</span><span class="v">none</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="model is-stop">
+      <div class="stripe"></div>
+      <div class="inner">
+        <div class="model-head">
+          <span class="name">Fire &amp; Smoke</span>
+          <span class="file">trained, not deployed</span>
+          <span class="badge stop">Do not ship</span>
+        </div>
+        <p>Trained for 9.5 hours and reached <strong>mAP@50 0.574</strong>. Fire precision 0.65 means about one in three alerts is false; smoke recall 0.47 means it misses over half of all smoke &mdash; and smoke is the early-warning half of the feature.</p>
+        <p>The cause was found by auditing the data afterwards: one source supplied <strong>92% of the merged images</strong> and was <strong>43% duplicate or near-duplicate</strong> &mdash; pre-augmented. RF-DETR augments during training, so the model largely learned that source’s augmentation.</p>
+        <div class="facts">
+          <div class="fact"><span class="k">mAP@50</span><span class="v">0.574</span></div>
+          <div class="fact"><span class="k">Fire precision</span><span class="v">0.647</span></div>
+          <div class="fact"><span class="k">Smoke recall</span><span class="v">0.465</span></div>
+          <div class="fact"><span class="k">Verdict</span><span class="v">retrain or park</span></div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section>
+  <h2>PPE class detail</h2>
+  <p class="lede">Detecting equipment that is present works well. Detecting equipment that is <em>absent</em> &mdash; the half you sell &mdash; is where it breaks down.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Class</th><th class="num">AP@50:95</th><th class="num">Precision</th><th class="num">Recall</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">vest</td><td class="num">0.768</td><td class="num">0.888</td><td class="num">0.968</td><td class="g">Excellent</td></tr>
+        <tr><td class="mono">person</td><td class="num">0.633</td><td class="num">0.699</td><td class="num">0.975</td><td class="g">Good</td></tr>
+        <tr><td class="mono">boots</td><td class="num">0.590</td><td class="num">0.781</td><td class="num">0.863</td><td class="g">Good</td></tr>
+        <tr><td class="mono">helmet</td><td class="num">0.564</td><td class="num">0.700</td><td class="num">0.970</td><td class="g">Good</td></tr>
+        <tr><td class="mono">no_vest</td><td class="num">0.411</td><td class="num">0.679</td><td class="num">0.817</td><td class="a">Weak</td></tr>
+        <tr><td class="mono">no_helmet</td><td class="num">0.302</td><td class="num">0.586</td><td class="num">0.850</td><td class="a">Weak</td></tr>
+        <tr><td class="mono">no_boots</td><td class="num">0.141</td><td class="num">0.233</td><td class="num">0.385</td><td class="r">Unusable</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="t">Why more data alone will not fix this</span>
+    <p>In object detection, every unlabelled region trains as <strong>background</strong>. Merging a dataset that labels helmets but not bare heads teaches the model <em>“bare head = background”</em> &mdash; actively damaging <code>no_helmet</code> while improving <code>helmet</code>, which is already strong.</p>
+    <p>Only sources that annotate <em>missing</em> PPE under a compatible taxonomy can be merged. Three such datasets were located and verified; none of them annotate missing boots at all.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Datasets</h2>
+  <p class="lede">Every source verified first-hand at the point of download. CC BY 4.0 permits commercial use; its one obligation is attribution, satisfied by the <code>NOTICE</code> file shipped with the product.</p>
+
+  <h3>In use</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Dataset</th><th>Model</th><th>Licence</th><th class="num">Images</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">iisc-aim/BMD-45</td><td>Vehicle</td><td class="mono g">CC BY 4.0</td><td class="num">45,986</td></tr>
+        <tr><td class="mono">roboflow-construction-ppe</td><td>PPE</td><td class="mono g">MIT</td><td class="num">&mdash;</td></tr>
+        <tr><td class="mono">construction-safety-gsnvb</td><td>PPE retrain</td><td class="mono g">CC BY 4.0</td><td class="num">1,206</td></tr>
+        <tr><td class="mono">construction-site-safety</td><td>PPE retrain</td><td class="mono g">CC BY 4.0</td><td class="num">717</td></tr>
+        <tr><td class="mono">ppe-construction-detection</td><td>PPE retrain</td><td class="mono g">CC BY 4.0</td><td class="num">2,926</td></tr>
+        <tr><td class="mono">forklift-detection-koqxi</td><td>Vehicle retrain</td><td class="mono g">CC BY 4.0</td><td class="num">7,383</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Rejected, and why</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Dataset</th><th>Licence</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">SH17</td><td class="mono r">CC BY-NC-SA</td><td>Non-commercial clause</td></tr>
+        <tr><td class="mono">DataCluster Indian plates</td><td class="mono r">CC BY-NC-ND</td><td>Non-commercial and no derivatives</td></tr>
+        <tr><td class="mono">Ultralytics construction-ppe</td><td class="mono r">AGPL-3.0</td><td>Has the <code>no_*</code> classes, but reintroduces the licence we escaped</td></tr>
+        <tr><td class="mono">BIDJOE/ppe-14classes</td><td class="mono r">none declared</td><td>No licence and no credited source &mdash; all rights reserved</td></tr>
+        <tr><td class="mono">CHV</td><td class="mono r">none declared</td><td>Citation requested, licence never stated</td></tr>
+        <tr><td class="mono">SHWD</td><td class="mono a">MIT (repo)</td><td>111,514 bare heads, but images scraped from Google/Baidu &mdash; the labeller cannot licence photos they do not own</td></tr>
+        <tr><td class="mono">SKU-110K re-upload</td><td class="mono a">claims CC BY 4.0</td><td>Original is academic/non-commercial; a re-upload cannot grant what it lacks</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Platform</h2>
+  <p class="lede">The models are one part. The machinery around them is what makes it sellable to more than one client at a time.</p>
+
+  <h3>Multi-tenancy and licensing</h3>
+  <ul>
+    <li><strong>Per-feature licensing.</strong> 26 features across 7 modules. A client buying <code>intrusion</code> does not receive the other six behaviours the same <code>person</code> worker provides.</li>
+    <li><strong>Tenant isolation</strong> proven by 29 tests against real Postgres, with two clients sharing one server and one worker.</li>
+    <li><strong>Per-org ingest tokens</strong>, SHA-256 stored. Rotation is the revocation path and clears every cache immediately.</li>
+  </ul>
+
+  <h3>Security</h3>
+  <ul>
+    <li><strong>Session fixation fixed</strong> &mdash; proven real by removing the fix and watching three tests fail, then restoring it.</li>
+    <li><strong>CSRF origin checking</strong>, because <code>SameSite=lax</code> compares the registrable domain and gives no protection between sibling subdomains.</li>
+    <li><strong>Audit trail</strong> &mdash; append-only, records who viewed which footage, with secrets scrubbed on the way in.</li>
+    <li><strong>AES-256-GCM</strong> camera credentials at rest; 30-day rolling sessions with a hard 90-day cap.</li>
+  </ul>
+
+  <h3>Operations</h3>
+  <ul>
+    <li><strong>Disk monitoring</strong> with client-admin alerts before recording fails.</li>
+    <li><strong>Schema drift check</strong> at boot, naming the exact missing table and the migration that creates it.</li>
+    <li><strong>Backup and restore</strong>, both tested against a live database.</li>
+    <li><strong>Sensor telemetry</strong> &mdash; parking, tank level, water pH, diesel theft detection. A dead sensor reads <code>unknown</code>, never “vacant”.</li>
+    <li><strong>Location hierarchy</strong> &mdash; group &rarr; site &rarr; building &rarr; floor &rarr; zone, with cycle prevention and no silent orphaning of cameras.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Outstanding</h2>
+  <p class="lede">Stated plainly, because a handover that hides these is worse than one that names them.</p>
+
+  <h3>Blocking a sale</h3>
+  <ul>
+    <li><strong>ANPR</strong> &mdash; never built, and it was the first thing asked for. Plate detection has ~29,000 CC BY 4.0 images ready; OCR for Indian plates is the real project.</li>
+    <li><strong>Alerts never leave the browser</strong> &mdash; no email, SMS or push. A fuel-theft alert at 2 a.m. currently reaches nobody.</li>
+    <li><strong>No reports</strong> &mdash; clients renew on monthly compliance and utilisation PDFs.</li>
+  </ul>
+
+  <h3>Unknowns that affect quoting</h3>
+  <ul>
+    <li><strong>No load test.</strong> Cameras-per-box is still unknown.</li>
+    <li><strong>CPU inference is 300&ndash;640 ms/frame.</strong> A site without a GPU cannot run these at 10 fps.</li>
+    <li><strong>Never tested against a real camera</strong> &mdash; only a synthetic RTSP stream.</li>
+  </ul>
+
+  <div class="note">
+    <span class="t">Process change</span>
+    <p>The fire model failed because licence and image count were verified while <em>data quality</em> was not. <code>scripts/audit_dataset.py</code> now checks duplicate rate, source dominance, box-size distribution, class balance, malformed annotations and train/val leakage &mdash; and is run <strong>before</strong> any GPU time is spent. A ten-hour run cannot repair a dataset.</p>
+  </div>
+</section>
+
+<footer>
+  Hyperspark VMS &middot; 177 tests passing &middot; 9 migrations &middot; zero AGPL dependencies in shipping code
+</footer>
+
+</div>

@@ -34,13 +34,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="username" className="text-sm text-foreground">Username</Label>
+            <Label htmlFor="username" className="text-sm text-foreground">Email</Label>
             <Input
               id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder="you@company.com"
               className="h-11"
               data-testid="input-username"
             />

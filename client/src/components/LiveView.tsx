@@ -1,6 +1,7 @@
 import CameraCard, { Camera } from "./CameraCard";
 import { Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth, canWrite } from "@/lib/auth";
 
 interface LiveViewProps {
   cameras: Camera[];
@@ -19,15 +20,22 @@ export default function LiveView({
   onFullscreen,
   onAddCamera,
 }: LiveViewProps) {
+  const auth = useAuth();
+  const writable = canWrite(auth.role);
+
   if (cameras.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <Video className="h-16 w-16 text-muted-foreground mb-4" />
         <h3 className="text-lg font-semibold text-foreground mb-2">No cameras added yet</h3>
-        <p className="text-sm text-muted-foreground mb-6">Add your first camera to start monitoring</p>
-        <Button onClick={onAddCamera} data-testid="button-add-first-camera">
-          Add Camera
-        </Button>
+        <p className="text-sm text-muted-foreground mb-6">
+          {writable ? "Add your first camera to start monitoring" : "No cameras have been added to your organization yet"}
+        </p>
+        {writable && (
+          <Button onClick={onAddCamera} data-testid="button-add-first-camera">
+            Add Camera
+          </Button>
+        )}
       </div>
     );
   }

@@ -1,0 +1,77 @@
+NOTICE
+======
+
+This product includes models trained on third-party datasets that are free for
+commercial use but require attribution. Ship this file with the product.
+
+--------------------------------------------------------------------------
+VEHICLE DETECTION MODEL  (models/vehicle/weights/vehicle_rfdetr.onnx)
+--------------------------------------------------------------------------
+Trained on BMD-45 — Bengaluru Mobility Dataset
+  Source:  https://huggingface.co/datasets/iisc-aim/BMD-45
+  Author:  Artificial Intelligence and Mobility (AIM) Lab, IISc Bengaluru
+  Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+  Changes: 14 fine-grained classes were merged into 8 operational classes;
+           images re-encoded to a longest side of 1280 px.
+
+--------------------------------------------------------------------------
+PPE DETECTION MODEL  (models/ppe/weights/ppe_rfdetr.onnx)
+--------------------------------------------------------------------------
+Trained on roboflow-construction-ppe
+  Source:  https://huggingface.co/datasets/vikasaarna/roboflow-construction-ppe-fruwx
+  Licence: MIT
+
+--------------------------------------------------------------------------
+MODEL ARCHITECTURE AND RUNTIME
+--------------------------------------------------------------------------
+RF-DETR (Nano/Small/Medium/Large)  Apache-2.0   Roboflow
+DINOv2 backbone                    Apache-2.0   Meta (relicensed Aug 2023)
+onnxruntime                        MIT          Microsoft
+supervision (ByteTrack)            MIT          Roboflow
+OpenCV                             Apache-2.0
+NumPy                              BSD-3-Clause
+
+--------------------------------------------------------------------------
+PPE MODEL — ADDITIONAL TRAINING DATA (when ROBOFLOW_API_KEY is configured)
+--------------------------------------------------------------------------
+These carry the missing-PPE (no_*) annotations. All CC BY 4.0; attribution is
+this file.
+
+  construction safety (RF100)
+    https://universe.roboflow.com/roboflow-100/construction-safety-gsnvb
+    Roboflow 100, 2023.  Licence: CC BY 4.0
+
+  Construction Site Safety
+    https://universe.roboflow.com/roboflow-universe-projects/construction-site-safety
+    Roboflow Universe Projects.  Licence: CC BY 4.0
+
+  PPE Construction Detection Dataset
+    https://universe.roboflow.com/v2-wo7jr/ppe-construction-detection-dataset-utu1c
+    Licence: CC BY 4.0
+
+  https://creativecommons.org/licenses/by/4.0/
+
+--------------------------------------------------------------------------
+FIRE / SMOKE MODEL  (models/fire/weights/fire_rfdetr.onnx)
+--------------------------------------------------------------------------
+All CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+
+  fire and smoke detection
+    https://universe.roboflow.com/middle-east-tech-university/fire-and-smoke-detection-hiwia
+  fire-smoke-detection
+    https://universe.roboflow.com/data2/fire-smoke-detection-ua3dm
+  Fire Dataset
+    https://universe.roboflow.com/smoke-and-fire-detecttion/fire-dataset-kdtib
+  FIRE AND SMOKE DETECTION
+    https://universe.roboflow.com/mahmoud-9wyf6/fire-and-smoke-detection-sdgt9
+
+--------------------------------------------------------------------------
+VEHICLE MODEL — FORKLIFT CLASS
+--------------------------------------------------------------------------
+All CC BY 4.0
+
+  forklift-detection
+    https://universe.roboflow.com/csv2tfrecord/forklift-detection-koqxi
+  Forklift
+    https://universe.roboflow.com/mohamed-traore-2ekkp/forklift-dsitv

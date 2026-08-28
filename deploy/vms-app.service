@@ -1,0 +1,19 @@
+[Unit]
+Description=VMS / Hyperspark platform (Node app: API, WHEP proxy, recorders)
+After=network-online.target postgresql.service vms-mediamtx.service
+Wants=network-online.target
+Requires=vms-mediamtx.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hyperspark/VMS/VMS/VMS_PRODUCTION
+ExecStart=/usr/bin/node dist/index.cjs
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+User=hyperspark
+Group=hyperspark
+
+[Install]
+WantedBy=multi-user.target
