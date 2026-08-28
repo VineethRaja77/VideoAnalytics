@@ -1,6 +1,28 @@
-# Production deploy (Linux)
+# `deploy/` — production deployment
 
-## 1. Install dependencies
+[← back to the root README](../README.md) · siblings: [scripts/](../scripts/README.md) · [server/](../server/README.md) · [models/](../models/README.md) · see also [DEPLOYMENT.md](../DEPLOYMENT.md)
+
+## What is in this directory
+
+| File | Goes to | Purpose |
+|---|---|---|
+| `vms-app.service` | `/etc/systemd/system/` | the Node platform unit. `Restart=always` — combined with `initRecordersFromDB()` at boot, this covers a Node crash mid-recording |
+| `vms-mediamtx.service` | `/etc/systemd/system/` | MediaMTX unit — the only process that talks to a camera |
+| `mediamtx.yml` | `/etc/vms/` | MediaMTX config: RTSP 8554, HLS 8888, WebRTC 8889, ICE 8189/udp, Control API 9997 |
+| `vms.env.example` | `/etc/vms/vms.env` | environment template — `DATABASE_URL`, `SESSION_SECRET`, `SECRET_ENCRYPTION_KEY`, `DEPLOYMENT_MODE` |
+| `nginx-vms.hyperspark.in.conf` | `/etc/nginx/sites-available/` | the site config actually running; copy as a reference for a new domain |
+| `nginx-websocket-upgrade.conf` | `/etc/nginx/conf.d/` | the `Upgrade`/`Connection` map WHEP and WebSocket need |
+| `PROTECTED-BUILD.md` | — | the bytecode build for on-prem clients; see [scripts/build-protected.mjs](../scripts/build-protected.mjs) |
+
+`DEPLOYMENT.md` at the repo root carries the go-live checklist, the required
+environment variables, first-boot admin passwords and the security posture. This
+file is the install runbook.
+
+---
+
+## Install runbook (Linux)
+
+### 1. Install dependencies
 
 ```bash
 sudo apt-get update
@@ -16,7 +38,7 @@ sudo tar -xzf /tmp/mediamtx.tar.gz -C /usr/local/bin mediamtx
 sudo chmod +x /usr/local/bin/mediamtx
 ```
 
-## 2. Create the `vms` service user and directories
+### 2. Create the `vms` service user and directories
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin vms
@@ -24,14 +46,14 @@ sudo mkdir -p /etc/vms /var/lib/vms/recordings /var/log/vms /opt/vms
 sudo chown -R vms:vms /var/lib/vms /var/log/vms
 ```
 
-## 3. Database
+### 3. Database
 
 ```bash
 sudo -u postgres createuser -P vms   # set a real password
 sudo -u postgres createdb -O vms rest_express
 ```
 
-## 4. App code + config
+### 4. App code + config
 
 ```bash
 # Deploy the built app to /opt/vms (npm run build first), then:
@@ -74,7 +96,7 @@ Model **weights** are not installed by this script — copy them into
 🧩 model "vehicle": ok (checksums verified)
 ```
 
-## 5. Domain, TLS, and firewall
+### 5. Domain, TLS, and firewall
 
 This assumes the domain is proxied through Cloudflare (orange-cloud) with an
 A/AAAA record pointing at this box's public IP, and that Cloudflare's

@@ -1,9 +1,58 @@
-# Vehicle Type Detector — training bundle
+# `train_vehicle/` — the 8-class vehicle detector
 
-Same pattern as `train/train_ppe_kaggle.py`: one self-contained script that builds
-the dataset from public data and trains a YOLO11 detector on Kaggle GPU.
+[← back to the root README](../README.md) · siblings: [train/](../train/README.md) · [train_fire/](../train_fire/README.md) · [data/](../data/README.md) · consumer: [models/vehicle/](../models/vehicle/README.md)
+
+## Two trainers — use the RF-DETR one
+
+| File | Model | Ships? |
+|---|---|---|
+| `train_vehicle_rfdetr_kaggle.py` | RF-DETR-Small, Apache-2.0 | **yes — this is the shipping trainer** |
+| `train_vehicle_kaggle.py` | YOLO11s, AGPL-3.0 | no; kept for reference and for its calibration stage |
+
+Ultralytics' licence covers "the training code **and the models produced by that
+training code**", so YOLO-trained weights cannot ship in a closed-source
+product. Everything below about **data, class merging, calibration and the
+aspect-ratio warning applies to both**; only the trainer and its knobs differ.
+
+Measured, honestly:
+
+| Run | mAP50 | mAP50-95 |
+|---|---|---|
+| YOLO11s @ 960 px, 51 epochs | 0.8911 | 0.7702 |
+| RF-DETR-S @ 512 px, 19 epochs | 0.8723 | 0.7321 (already plateaued) |
+| RF-DETR-S @ 640 px, 40 epochs | current shipping weights | |
+
+The RF-DETR run lowered `CAP_TRAIN` from 20,000 to buy back resolution and
+epochs. That trade was made deliberately: at 512 px the run had plateaued, so
+more images were not the constraint — pixels on small distant vehicles were.
+
+### Running the RF-DETR trainer
+
+1. Kaggle Notebook → Accelerator **GPU (T4 ×2 or P100)**, Internet **ON**.
+2. `!python train_vehicle_rfdetr_kaggle.py`
+3. Output → `/kaggle/working/vehicle_rfdetr/` — download the **`.onnx`**, not
+   the `.pth`; the worker runs onnxruntime.
+4. Copy to `models/vehicle/weights/vehicle_rfdetr.onnx`, then
+   `npx tsx server/modelRegistry.ts --record`.
+
+**Skip the ~70 GB download on re-runs:** after the first run, zip
+`/kaggle/working/dataset`, upload it as a Kaggle Dataset, and set `DATASET_DIR`
+to its input path — training then starts immediately.
+
+Key constants: `MODEL_SIZE="small"` (Nano/Small/Medium/Large only — **never**
+XLarge/2XLarge, PML-1.0), `RESOLUTION=640`, `EPOCHS=40`. The `[budget]` block
+printed before training measures the real dataset and warns if the epoch count
+will not be useful (`MIN_USEFUL_EPOCHS=20`), printing the resolution to use
+instead. Read it in the first minute rather than discovering the problem at hour
+eleven.
+
+---
 
 ## Classes (8)
+
+One self-contained script builds the dataset from public data and trains on a
+Kaggle GPU — same pattern as [train/](../train/README.md).
+
 
 | id | class | merged from BMD-45 |
 |----|-------|--------------------|
@@ -45,12 +94,14 @@ bus 15,338 | truck 9,968 | bicycle 4,713 | van 4,020
 - The paper describes a 14th `Other` class — it is **not** in the released
   annotations. Only the 13 above exist.
 
-## Run it
+## Running the YOLO trainer (reference / calibration only)
 
 1. Kaggle notebook → Settings → **Accelerator = GPU**, **Internet = ON**.
 2. Upload `train_vehicle_kaggle.py` (or this whole zip as a Kaggle Dataset).
 3. `!python train_vehicle_kaggle.py`
-4. Model → `/kaggle/working/vehicle_best.pt`
+4. Model → `/kaggle/working/vehicle_best.pt` — **cannot ship**; see the licence
+   note at the top. Its value now is the `calibrate()` stage below and the
+   dataset-building code the RF-DETR script inherits.
 
 ### Adding your own CCTV frames
 
@@ -62,7 +113,7 @@ Caveat on auto-prelabeling: COCO has **no auto-rickshaw, LCV or tempo-traveller*
 class, so those come out mislabeled as car/truck or get missed entirely. Review
 them in CVAT. Everything else it labels for free.
 
-## Tuning
+## Tuning (YOLO trainer)
 
 | knob | default | note |
 |------|---------|------|
