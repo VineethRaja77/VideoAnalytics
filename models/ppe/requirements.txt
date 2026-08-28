@@ -1,0 +1,22 @@
+# PPE + person detection worker — dependencies.
+#
+# NO ultralytics, NO torch. Inference is RF-DETR exported to ONNX and run on
+# onnxruntime; tracking is supervision's ByteTrack. Every component here is
+# permissively licensed and shippable in a closed-source commercial product:
+#   onnxruntime  MIT       supervision  MIT
+#   opencv       Apache-2  numpy        BSD
+# (The RF-DETR weights themselves are Apache-2.0 — Nano/Small/Medium/Large only,
+#  never XLarge/2XLarge which are PML-1.0. The DINOv2 backbone is Apache-2.0
+#  since Meta relicensed it in Aug 2023.)
+#
+# python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+onnxruntime==1.28.0
+# PINNED: supervision deprecated ByteTrack in 0.28 and removes it in 0.31,
+# naming no replacement. Until an alternative exists, pin below 0.31 rather
+# than let a routine `pip install -U` silently break tracking.
+supervision>=0.26,<0.31
+opencv-python-headless>=4.10
+numpy>=1.26
+lap>=0.5                      # linear assignment used by ByteTrack
+requests==2.32.3
+python-dotenv==1.0.1

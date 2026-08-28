@@ -1,0 +1,9 @@
+# Face recognition worker — dependencies.
+# NOTE: no torch, no ultralytics. Nothing is trained here; both models are ONNX
+# and run on CPU via onnxruntime.
+# python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+onnxruntime==1.28.0
+opencv-python-headless>=4.10
+numpy>=1.26
+requests==2.32.3
+python-dotenv==1.0.1

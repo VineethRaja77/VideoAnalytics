@@ -1,0 +1,17 @@
+# Person analytics worker — dependencies.
+#
+# NO training, NO torch, NO ultralytics. Detection is RF-DETR COCO-pretrained
+# (Apache-2.0) exported to ONNX; `person` is COCO class 1 in the stock
+# checkpoint, so nothing had to be trained. Everything here is permissively
+# licensed and shippable in a closed-source commercial product:
+#   onnxruntime MIT | supervision MIT | opencv Apache-2.0 | numpy BSD
+#
+# python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+onnxruntime==1.28.0
+# PINNED: supervision deprecated ByteTrack in 0.28 and removes it in 0.31,
+# naming no replacement.
+supervision>=0.26,<0.31
+opencv-python-headless>=4.10
+numpy>=1.26
+requests==2.32.3
+python-dotenv==1.0.1

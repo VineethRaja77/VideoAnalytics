@@ -1,0 +1,9 @@
+# Abandoned-object worker — dependencies.
+#
+# NO model, NO onnxruntime, NO torch. Pure OpenCV/numpy image statistics, so
+# there is nothing to train, nothing to license and nothing to checksum.
+#   opencv Apache-2.0 | numpy BSD
+opencv-python-headless>=4.10
+numpy>=1.26
+requests==2.32.3
+python-dotenv==1.0.1

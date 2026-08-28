@@ -1,0 +1,9 @@
+.venv/
+.env
+outputs/
+snapshots/
+gallery/*.npz
+gallery/*.json
+people/
+__pycache__/
+*.pyc

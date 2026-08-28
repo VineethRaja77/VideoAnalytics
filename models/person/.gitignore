@@ -1,0 +1,7 @@
+.venv/
+.env
+outputs/
+snapshots/
+weights/*.onnx
+__pycache__/
+*.pyc

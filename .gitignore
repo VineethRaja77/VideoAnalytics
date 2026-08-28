@@ -23,7 +23,10 @@ venv/
 .pytest_cache/
 
 # ---- Datasets (multi-GB, not for git) ----
-data/
+# data/* rather than data/ so the README stays tracked: git cannot descend into
+# an ignored DIRECTORY, so a negation inside one has no effect.
+data/*
+!data/README.md
 train/dataset/*
 !train/dataset/data.yaml
 train/site_cvat/
@@ -36,9 +39,14 @@ train/runs/
 train_vehicle/frames_labeled/
 
 # ---- Model weights & training output ----
-models/*
-!models/README.md
-!models/manifest.json
+# Module CODE and DOCS are tracked; only the artefacts are not. `models/*` used
+# to blanket-ignore the lot, which silently kept every module README and every
+# pipeline/*.py out of git.
+models/*/weights/
+models/*/gallery/
+models/*/snapshots/
+models/*/outputs/
+models/*/.venv/
 train_weights/
 outputs/
 runs/
