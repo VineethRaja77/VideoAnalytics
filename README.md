@@ -138,6 +138,23 @@ licence file offline and phone home for suspend/revoke.
 `resolveOrgScope` in [`rbac.ts`](server/rbac.ts) — never from the request body.
 Four roles: `super_admin`, `client_admin`, `client_manager`, `client_employee`.
 
+
+## Product surfaces
+
+**Super Admin console.** The platform owner works at the organization level:
+Overview, Organizations, Licensing, Models, System, Audit and Settings. Creating
+an organization is a single wizard (organization identity/logo, administrator,
+feature entitlements, limits, review) so the organization, its primary admin,
+licences and allowances are provisioned atomically. Platform Licensing shows one
+contract row per organization and opens into feature-level entitlements.
+
+**Client portal.** Organization users own their daily operations: Operations,
+Live, Cameras, Playback, Analytics Setup, Events, Users, Audit Trail and
+Settings. Events are consolidated into an Events Center with module tabs gated
+by licensed features. Sites, cameras, staff, sensors, operational analytics and
+events stay in the client portal; Super Admin sees aggregate usage and platform
+health.
+
 ---
 
 ## Quick start (development)
@@ -172,7 +189,7 @@ analytics workers") never mention the schema.
 | `npm run build` | Vite → `dist/public`, esbuild → `dist/index.js` |
 | `npm run build:protected` | bytecode build for on-prem — see [deploy/PROTECTED-BUILD.md](deploy/PROTECTED-BUILD.md) |
 | `npm run check` | `tsc`, no emit |
-| `npm test` | Vitest, 11 suites in [server/\_\_tests\_\_/](server/__tests__/) |
+| `npm test` | Vitest server suite (currently 20 files) in [server/__tests__/](server/__tests__/) |
 | `npm run db:push` | drizzle-kit push |
 
 Production install, TLS, firewall and systemd: **[deploy/README.md](deploy/README.md)**.

@@ -56,9 +56,9 @@ that.
 
 | Table | Notes |
 |---|---|
-| `organizations` | one tenant. `ingestKeyHash` is the **SHA-256 of that org's analytics ingest token** — only the hash is stored, and it is scoped to one org, so a token leaked from one on-prem site cannot forge events for another tenant the way a platform-wide shared key could. The token is high-entropy random, so a fast hash is correct here; this is not a user password |
+| `organizations` | one tenant and the central customer account. Holds `logoDataUrl` for organization branding. `ingestKeyHash` is the **SHA-256 of that org's analytics ingest token** — only the hash is stored, and it is scoped to one org, so a token leaked from one on-prem site cannot forge events for another tenant the way a platform-wide shared key could. The token is high-entropy random, so a fast hash is correct here; this is not a user password |
 | `users` | `ROLES = super_admin | client_admin | client_manager | client_employee`. A `super_admin` has `organizationId = null` |
-| `products` | licensable products (`vms` today; `frs`, `anpr` later) |
+| `products` | licensable base products and feature products. Retired legacy products are kept for audit/history but hidden from grant flows |
 | `licenses` | one row per (org, product), uniquely indexed. `plan`, `status`, `expiresAt`, `limits` JSON, plus the on-prem cryptographic columns `machineFingerprint`, `signedLicense`, `lastValidatedAt` |
 
 ### Video
@@ -93,6 +93,12 @@ Four constraints make it trustworthy:
 - **never stores the value of a secret**, only that a secret changed.
 
 Indexed on `(organizationId, createdAt)`, `actorId`, and `action`.
+
+### Platform settings
+
+`platform_settings` is a small key/value table for deployment-owned UI settings,
+currently platform branding (`platformLogoDataUrl`). Organization branding lives
+on `organizations.logoDataUrl`.
 `AUDIT_ACTIONS` enumerates every recordable action, from `login_failed` to
 `recording_exported` to `ingest_token_minted`.
 

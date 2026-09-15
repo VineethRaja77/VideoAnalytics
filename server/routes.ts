@@ -1,3 +1,4 @@
+import { QuotaError } from "./quotaWrite";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { spawn } from "child_process";
@@ -28,12 +29,17 @@ import {
 import { verifyPassword, hashPassword, requireAuth, establishSession, validatePasswordStrength } from "./auth";
 import { emitEvent, listEvents } from "./events";
 import { requireModule, getLicensedModules } from "./entitlements";
+import { canAdd, startQuotaMonitor, usageFor } from "./limits";
 import { requireSuperAdmin, requireWriteAccess, requireMinRole, resolveOrgScope } from "./rbac";
 import { registerAdminRoutes } from "./adminRoutes";
+import { registerSystemRoutes } from "./systemRoutes";
+import { registerConsoleRoutes } from "./consoleRoutes";
 import { registerOrgRoutes } from "./orgRoutes";
 import { registerLicenseRoutes } from "./licenseRoutes";
 import { loginLimiter } from "./security";
 import { registerSnapshotRoutes, startSnapshotRetention } from "./snapshotRoutes";
+import { registerCameraFrameRoutes } from "./cameraFrameRoutes";
+import { registerFaceRoutes } from "./faceRoutes";
 import { logModelStatus } from "./modelRegistry";
 import { startStorageMonitor, checkDisk } from "./storageMonitor";
 import { audit, listAudit, purgeExpiredAudit } from "./audit";
@@ -62,6 +68,28 @@ async function getCameraForRequest(req: Request, cameraId: string): Promise<Came
 }
 
 const GST_LAUNCH_PATH = process.env.GST_LAUNCH_PATH || "gst-launch-1.0";
+
+async function authPayload(req: Request, user: any) {
+  const org = user.organizationId ? await storage.getOrganization(user.organizationId) : null;
+  const licensedModules =
+    user.role === "super_admin"
+      ? "*"
+      : user.organizationId
+        ? await getLicensedModules(user.organizationId)
+        : [];
+  return {
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    organizationId: user.organizationId,
+    organizationName: org?.name ?? null,
+    organizationLogoDataUrl: (org as any)?.logoDataUrl ?? null,
+    licensedModules,
+    timezone: process.env.APP_TIMEZONE || "Asia/Kolkata",
+    sessionStartedAt: req.session.loginAt ?? null,
+  };
+}
 
 // SAFE REMOVE FOLDER
 function deleteFolderSafe(folderPath: string) {
@@ -150,7 +178,7 @@ function probeStreamCodec(
   });
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express, options: { startBackgroundServices?: boolean } = {}): Promise<Server> {
   /* --------------------------
      NO EDGE CACHING FOR THE API
      Every /api response is authenticated and tenant-private. Without this,
@@ -202,7 +230,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Regenerates the session id first — see establishSession. Assigning
       // req.session.userId directly would leave the pre-login id valid and
       // reintroduce session fixation.
-      await establishSession(req, user.id);
+      //
+      // `remember` decides whether the cookie survives the browser closing.
+      // Default TRUE so an older client that does not send the field keeps the
+      // behaviour it has today; the login screen always sends it explicitly.
+      await establishSession(req, user.id, req.body.remember !== false);
 
       void audit(req, {
         action: "login",
@@ -211,7 +243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.json({
         success: true,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role },
+        user: await authPayload(req, user),
       });
     } catch (err) {
       console.error("❌ POST /api/auth/login failed:", err);
@@ -244,23 +276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    */
   app.get("/api/auth/me", requireAuth, async (req, res) => {
     const user = req.user!;
-    const licensedModules =
-      user.role === "super_admin"
-        ? "*"
-        : user.organizationId
-          ? await getLicensedModules(user.organizationId)
-          : [];
-    res.json({
-      userId: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      organizationId: user.organizationId,
-      licensedModules,
-      // Changes on every fresh login, so a tab can tell "same session" from
-      // "someone logged in again in another tab".
-      sessionStartedAt: req.session.loginAt ?? null,
-    });
+    res.json(await authPayload(req, user));
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
@@ -313,6 +329,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   --------------------------- */
   app.use("/api/admin", requireAuth, requireSuperAdmin);
   registerAdminRoutes(app);
+  registerSystemRoutes(app);
+  registerConsoleRoutes(app);
   app.use("/api/org", requireAuth);
   registerOrgRoutes(app);
   // Public licensing endpoints (fingerprint + phone-home) — no session auth.
@@ -320,7 +338,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analytics events: worker ingest (key-authed) + dashboard read (session).
   registerAnalyticsRoutes(app);
   registerCameraAnalyticsRoutes(app);
+  /**
+   * What this organisation is using, against what it is allowed.
+   *
+   * Client-facing: a client admin should be able to see they are at 218 of 250
+   * cameras WITHOUT being refused first. Being told a limit exists only at the
+   * moment it blocks you is how a limit feels arbitrary.
+   */
+  app.get("/api/org/usage", requireAuth, async (req, res) => {
+    const orgId = resolveOrgScope(req);
+    if (!orgId) return res.status(400).json({ error: "No organization context" });
+    try {
+      res.json(await usageFor(orgId));
+    } catch (err) {
+      console.error("❌ GET /api/org/usage failed:", err);
+      res.status(500).json({ error: "Failed to read usage" });
+    }
+  });
+
   registerSnapshotRoutes(app);
+  // A live still from a camera — the backdrop an operator draws zones on.
+  registerCameraFrameRoutes(app);
+  // Enrol / list / remove the people face recognition matches against.
+  registerFaceRoutes(app);
 
   /* --------------------------
      VMS MODULE — requires a session AND a valid 'vms' license for the org.
@@ -479,15 +519,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orgId = resolveOrgScope(req);
       if (!orgId) return res.status(400).json({ error: "No organization context for this camera" });
 
-      // Enforce the license's camera limit, if set.
-      const license = await storage.getEffectiveLicense(orgId, "vms");
-      const maxCameras = (license?.limits as any)?.maxCameras;
-      if (typeof maxCameras === "number") {
-        const current = await storage.countCamerasByOrg(orgId);
-        if (current >= maxCameras) {
-          return res.status(403).json({ error: `Camera limit reached (${maxCameras}) for your license` });
-        }
-      }
+      // Every quota is decided in one place (server/limits.ts) so the number a
+      // client is refused on is the same number the console shows them.
+      const allowed = await canAdd(orgId, "maxCameras");
+      if (!allowed.ok) return res.status(403).json({ error: allowed.message });
 
       const camera = await storage.createCamera(validated, orgId);
 
@@ -517,6 +552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid camera data", details: err.errors });
       }
+      if (err instanceof QuotaError) return res.status(403).json({ error: err.message });
       console.error("❌ POST /api/cameras failed:", err);
       res.status(500).json({ error: "Failed to create camera" });
     }
@@ -860,14 +896,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   --------------------------- */
 
   const httpServer = createServer(app);
-
-  initRecordersFromDB().catch((err) => console.error("❌ Failed to restore recorders:", err));
   registerLocationRoutes(app);
   registerSensorRoutes(app);
+  // Integration/browser harnesses exercise real routes without starting media workers.
+  if (options.startBackgroundServices === false) return httpServer;
+
+  initRecordersFromDB().catch((err) => console.error("❌ Failed to restore recorders:", err));
   startSensorMqtt();   // no-op unless MQTT_URL is set
 
   logModelStatus();
   startStorageMonitor();
+  // Per-CLIENT allowances, as opposed to the host's own disk.
+  startQuotaMonitor();
 
   // Audit retention: off unless the operator sets AUDIT_RETENTION_DAYS, and
   // floored at 365 days when they do. Runs daily, not hourly — this is a slow

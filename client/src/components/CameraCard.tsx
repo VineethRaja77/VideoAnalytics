@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Video, Volume2, VolumeX, Camera, Maximize2 } from "lucide-react";
 import { useWhepPlayer } from "@/hooks/useWhepPlayer";
+import { fileStamp } from "@/lib/datetime";
 
 export type CameraStatus = "online" | "offline" | "inactive";
 
@@ -70,7 +71,10 @@ export default function CameraCard({
 
     canvas.toBlob((blob) => {
       if (!blob) return;
-      const ts = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
+      // Site time, not UTC: this filename is what the operator sees in their
+      // downloads folder and matches against an event list that is also in
+      // site time.
+      const ts = fileStamp(new Date());
       const safeName = camera.name.replace(/[^a-z0-9]/gi, "_");
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -90,7 +94,6 @@ export default function CameraCard({
       <div
         className="relative bg-black aspect-video flex items-center justify-center"
         onClick={() => {
-          console.log("🔵 CameraCard CLICKED:", camera);
           onView(camera);
         }}
       >
@@ -152,6 +155,8 @@ export default function CameraCard({
               e.stopPropagation();
               onView(camera);
             }}
+            aria-label={`Open the live view for ${camera.name}`}
+            title="Live view"
             data-testid={`button-view-${camera.id}`}
           >
             <Video className="h-4 w-4" />
@@ -165,6 +170,8 @@ export default function CameraCard({
               e.stopPropagation();
               handleAudioToggle();
             }}
+            aria-label={`${audioOn ? "Mute" : "Unmute"} audio for ${camera.name}`}
+            title={audioOn ? "Mute audio" : "Unmute audio"}
             data-testid={`button-audio-${camera.id}`}
           >
             {audioOn ? (
@@ -182,6 +189,8 @@ export default function CameraCard({
               e.stopPropagation();
               handleSnapshot();
             }}
+            aria-label={`Save a still image from ${camera.name}`}
+            title="Save a still image"
             data-testid={`button-snapshot-${camera.id}`}
           >
             <Camera className="h-4 w-4" />
@@ -194,6 +203,8 @@ export default function CameraCard({
               e.stopPropagation();
               onFullscreen(camera);
             }}
+            aria-label={`Open ${camera.name} full screen`}
+            title="Full screen"
             data-testid={`button-fullscreen-${camera.id}`}
           >
             <Maximize2 className="h-4 w-4" />

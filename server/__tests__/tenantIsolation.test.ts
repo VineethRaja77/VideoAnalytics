@@ -489,3 +489,56 @@ describe("camera credentials at rest", () => {
     expect(stored).not.toContain("10.0.0.1");
   });
 });
+
+describe("zone geometry is validated before it can reach a worker", () => {
+  // A malformed polygon used to raise ValueError inside the Python worker,
+  // kill it, and leave the supervisor restarting it forever against a config
+  // that could never parse — taking every other analytic on that camera down.
+  it("refuses a polygon with an odd number of coordinates", async () => {
+    const r = await request(app)
+      .post(`/api/cameras/${ids.a!.cameraId}/analytics`)
+      .set(as(ids.a!.manager))
+      .send({ feature: "intrusion", config: { INTRUSION_ZONE: "10,10,20" } });
+    expect(r.status, JSON.stringify(r.body)).toBe(400);
+    expect(r.body.error).toMatch(/odd number/);
+  });
+
+  it("refuses coordinates that could not have come from this camera", async () => {
+    const r = await request(app)
+      .post(`/api/cameras/${ids.a!.cameraId}/analytics`)
+      .set(as(ids.a!.manager))
+      .send({
+        feature: "intrusion",
+        config: { INTRUSION_ZONE: "0,0,99999,0,99999,99999" },
+      });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/different image size/);
+  });
+
+  it("accepts a well-formed restricted area", async () => {
+    const r = await request(app)
+      .post(`/api/cameras/${ids.a!.cameraId}/analytics`)
+      .set(as(ids.a!.manager))
+      .send({
+        feature: "intrusion",
+        config: { INTRUSION_ZONE: "100,100,300,100,300,300,100,300" },
+      });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.config.INTRUSION_ZONE).toBe("100,100,300,100,300,300,100,300");
+  });
+
+  it("leaves non-geometry config untouched", async () => {
+    const r = await request(app)
+      .post(`/api/cameras/${ids.a!.cameraId}/analytics`)
+      .set(as(ids.a!.manager))
+      .send({
+        feature: "intrusion",
+        config: {
+          INTRUSION_ZONE: "0,0,10,0,10,10",
+          INTRUSION_MIN_FRAMES: "5",
+        },
+      });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.config.INTRUSION_MIN_FRAMES).toBe("5");
+  });
+});

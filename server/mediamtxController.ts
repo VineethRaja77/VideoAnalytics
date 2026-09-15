@@ -28,6 +28,7 @@ interface MtxError {
 async function mtxRequest(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<any> {
   const res = await fetch(`${MTX_API_BASE}${path}`, {
     method,
+    signal: AbortSignal.timeout(2500),
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });

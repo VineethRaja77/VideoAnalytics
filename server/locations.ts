@@ -19,6 +19,7 @@
 //      must fail loudly, not detach them where nobody will look.
 
 import { db } from "./storage";
+import { quotaWrite } from "./quotaWrite";
 import { locations, cameras, devices, type Location } from "@shared/schema";
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
 
@@ -62,7 +63,8 @@ export async function createLocation(
     }
   }
 
-  const [created] = await db
+  const insert = async (executor: any): Promise<Location> => {
+  const [created] = await executor
     .insert(locations)
     .values({
       organizationId: orgId,
@@ -74,6 +76,8 @@ export async function createLocation(
     })
     .returning();
   return created;
+  };
+  return input.kind === "site" ? quotaWrite(orgId, "maxSites", insert) : insert(db);
 }
 
 /* ------------------------------------------------------------------- move */

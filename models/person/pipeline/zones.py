@@ -22,16 +22,53 @@ def centroid(bbox) -> tuple[float, float]:
     return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
 
 
+#: Separates SEVERAL areas in one setting.
+#:
+#: A yard camera covers the fuel store and the transformer bay, and they are not
+#: one shape. ";" used to be an alias for "," (so "1,2;3,4" was a single
+#: polygon); it now separates polygons, which is the only reading under which a
+#: camera can carry more than one restricted area. Matches AREA_SEPARATOR in
+#: shared/analyticsConfig.ts.
+AREA_SEPARATOR = ";"
+
+
 def parse_polygon(spec: str) -> list[tuple[float, float]]:
     """"x1,y1,x2,y2,x3,y3,..." -> [(x1,y1), ...]. Empty -> []."""
     if not spec or not spec.strip():
         return []
-    nums = [float(v) for v in spec.replace(";", ",").split(",") if v.strip() != ""]
+    nums = [float(v) for v in spec.split(",") if v.strip() != ""]
     if len(nums) < 6 or len(nums) % 2:
         raise ValueError(
             f"polygon needs an even count of at least 6 numbers, got {len(nums)}"
         )
     return [(nums[i], nums[i + 1]) for i in range(0, len(nums), 2)]
+
+
+def parse_polygons(spec: str) -> list[list[tuple[float, float]]]:
+    """One setting -> every area in it. Empty -> []."""
+    if not spec or not spec.strip():
+        return []
+    return [
+        parse_polygon(part)
+        for part in spec.split(AREA_SEPARATOR)
+        if part.strip() != ""
+    ]
+
+
+def point_in_any(pt, polys) -> bool:
+    """Inside ANY of these areas.
+
+    An empty LIST means no areas are defined; the caller decides what that
+    means, because the honest answer differs by rule. For intrusion it must
+    refuse to run; for crowd density it means the whole frame.
+    """
+    return any(point_in_polygon(pt, p) for p in polys)
+
+
+def total_area(polys) -> float:
+    """Combined area in px^2. Overlaps are counted twice — good enough for the
+    density figure this feeds, and far cheaper than true polygon union."""
+    return sum(polygon_area(p) for p in polys)
 
 
 def point_in_polygon(pt, poly) -> bool:

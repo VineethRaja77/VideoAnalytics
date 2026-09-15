@@ -15,6 +15,7 @@ import ModuleEventsView, {
   type CameraLite,
   type EventColumn,
 } from "@/components/ModuleEventsView";
+import { formatDateTime } from "@/lib/datetime";
 
 const TYPE_COLOR: Record<string, string> = {
   two_wheeler: "bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200",
@@ -27,12 +28,12 @@ const TYPE_COLOR: Record<string, string> = {
   bicycle: "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-200",
 };
 
-export default function VehicleEventsView({ cameras }: { cameras: CameraLite[] }) {
+export default function VehicleEventsView({ cameras, compact = false }: { cameras: CameraLite[]; compact?: boolean }) {
   const columns: EventColumn[] = [
     {
       header: "Time",
       className: "whitespace-nowrap",
-      cell: (e) => new Date(e.createdAt).toLocaleString(),
+      cell: (e) => formatDateTime(e.createdAt),
     },
     { header: "Camera", cell: (e) => cameraName(cameras, e.cameraId) },
     {
@@ -106,6 +107,7 @@ export default function VehicleEventsView({ cameras }: { cameras: CameraLite[] }
       cameras={cameras}
       // Counting is telemetry, not an alert queue — nothing to acknowledge.
       ackable={false}
+      hideHeading={compact}
       emptyText="No vehicle events yet. Enable the vehicle module on a camera and set a counting line."
     />
   );

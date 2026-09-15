@@ -28,6 +28,7 @@ class Gallery:
         self.names: list[str] = []      # per-embedding person name (repeats)
         self.vectors: np.ndarray = np.zeros((0, 512), dtype=np.float32)
         self.meta: dict = {}
+        self._stamp: tuple[float, int] | None = None
         if os.path.exists(path):
             self.load()
 
@@ -40,13 +41,71 @@ class Gallery:
         if os.path.exists(meta_path):
             with open(meta_path) as f:
                 self.meta = json.load(f)
+        self._stamp = self._file_stamp()
+
+    def _file_stamp(self) -> "tuple[float, int] | None":
+        """Modification time AND size. Two writes inside one filesystem
+        timestamp tick are indistinguishable by mtime alone, and a gallery
+        edit that only removes a person can land in the same tick."""
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return None
+        return (st.st_mtime, st.st_size)
+
+    def reload_if_changed(self) -> bool:
+        """Pick up enrolments made while the worker is running.
+
+        A 24/7 worker that loaded its gallery once at startup will not recognise
+        anybody enrolled afterwards until it is restarted — and restarting a
+        worker drops every track and blanks the camera for several seconds, on
+        EVERY camera in the organisation, every time one person is added. So the
+        file is re-read when it changes instead.
+
+        Returns True only when a new gallery was actually adopted. A file that
+        is mid-write (np.load raises, or the mtime moved but the bytes are not
+        complete) leaves the current gallery in place and is retried on the next
+        call — never a half-loaded gallery, which would silently stop
+        recognising people who are still enrolled.
+        """
+        stamp = self._file_stamp()
+        if stamp is None:
+            return False                 # deleted or never created — keep what we have
+        if stamp == self._stamp:
+            return False
+        try:
+            self.load()
+        except Exception as e:           # noqa: BLE001 — partial write, bad file
+            print(f"[gallery] {self.path} changed but could not be read yet ({e}); "
+                  f"keeping the previous gallery")
+            return False
+        return True
 
     def save(self) -> None:
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        np.savez(self.path, vectors=self.vectors,
+        """Write the gallery ATOMICALLY.
+
+        A running worker re-reads this file whenever it changes. np.savez
+        truncates and then streams, so a reader arriving mid-write sees a
+        corrupt archive; writing to a temporary file in the same directory and
+        renaming it means a reader only ever sees a complete gallery, because
+        os.replace is atomic within a filesystem.
+        """
+        directory = os.path.dirname(self.path) or "."
+        os.makedirs(directory, exist_ok=True)
+
+        tmp_npz = self.path + ".tmp"
+        np.savez(tmp_npz, vectors=self.vectors,
                  names=np.array(self.names, dtype=object).astype("U128"))
-        with open(self.path.replace(".npz", ".json"), "w") as f:
+        # np.savez appends .npz when the name does not already end in it.
+        written = tmp_npz if os.path.exists(tmp_npz) else tmp_npz + ".npz"
+        os.replace(written, self.path)
+
+        meta_path = self.path.replace(".npz", ".json")
+        tmp_meta = meta_path + ".tmp"
+        with open(tmp_meta, "w") as f:
             json.dump(self.meta, f, indent=2)
+        os.replace(tmp_meta, meta_path)
+        self._stamp = self._file_stamp()
 
     # ---------- enrolment ----------
     def add(self, name: str, vectors: np.ndarray, source: str = "") -> int:
@@ -65,6 +124,32 @@ class Gallery:
         if source:
             m["sources"].append(source)
         return len(vectors)
+
+    def rename(self, old: str, new: str) -> int:
+        """Correct a name without re-enrolling.
+
+        A typo is not a cosmetic problem here: the name is what appears on every
+        alert, and the only other route was to delete the person and photograph
+        them again. Embeddings are untouched — this changes a label, not the
+        biometric data, so nothing about recognition changes.
+        """
+        if old == new:
+            return 0
+        n = self.names.count(old)
+        if not n:
+            return 0
+        self.names = [new if x == old else x for x in self.names]
+        meta = self.meta.pop(old, None)
+        if meta is not None:
+            # Merge rather than overwrite if the target already exists, so a
+            # rename onto an existing person joins them instead of losing one.
+            existing = self.meta.get(new)
+            if existing:
+                existing["images"] = existing.get("images", 0) + meta.get("images", 0)
+                existing.setdefault("sources", []).extend(meta.get("sources", []))
+            else:
+                self.meta[new] = meta
+        return n
 
     def remove(self, name: str) -> int:
         """Delete a person. No retraining — this is just dropping rows."""

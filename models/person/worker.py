@@ -12,6 +12,7 @@ organisation is licensed for, so an unlicensed rule is never constructed.
 Run:  . .venv/bin/activate && python worker.py
 """
 import os
+import sys
 import time
 
 import cv2
@@ -21,6 +22,7 @@ from events import emit
 from stream import RtspFrameSource
 from pipeline.detect import PersonDetector
 from pipeline.rules import build_rules
+from pipeline.schedule import load_schedules, active as schedule_active
 
 
 def save_snapshot(frame, detail) -> str | None:
@@ -71,14 +73,36 @@ def main() -> None:
         lost_track_buffer=config.LOST_TRACK_BUFFER,
         frame_rate=int(config.SAMPLE_FPS) or 6,
     )
-    rules = build_rules(config.ENABLED_FEATURES, config)
+    # sysexits.h EX_CONFIG. The supervisor treats this ONE code as "waiting for
+    # an operator", not as a crash: no restart, no backoff, no "worker crashed"
+    # alert to the client. Any other non-zero exit stays a real failure.
+    EXIT_AWAITING_CONFIG = 78
+
+    awaiting: list[tuple[str, str]] = []
+    rules = build_rules(config.ENABLED_FEATURES, config, awaiting)
     if not rules:
+        if awaiting:
+            # Every licensed feature on this camera is a zone rule with no zone.
+            # Exiting as a crash here put the supervisor into an endless restart
+            # loop and sent the client admin a stream of "analytics crashed"
+            # alerts for what is really an unfinished setup step.
+            for feature, why in awaiting:
+                print(f"AWAITING_CONFIGURATION: {feature} — {why}", file=sys.stderr)
+            print("[person] nothing to run yet — every enabled feature on this "
+                  "camera is still waiting to be configured. Exiting quietly; "
+                  "the platform restarts this worker as soon as a zone is saved.")
+            raise SystemExit(EXIT_AWAITING_CONFIG)
         raise SystemExit(f"no known features in {config.ENABLED_FEATURES}")
 
     source = RtspFrameSource(config.SOURCE_RTSP, config.SAMPLE_FPS)
 
+    schedules = load_schedules(config.FEATURE_SCHEDULES)
+
     print(f"[person] camera={config.CAMERA_ID} source={config.SOURCE_RTSP}")
     print(f"[person] features={[r.feature for r in rules]}")
+    for r in rules:
+        sch = schedules.get(r.feature)
+        print(f"[person]   {r.feature}: {sch.describe() if sch else 'always on'}")
     print(f"[person] sample_fps={config.SAMPLE_FPS} conf={config.CONF} "
           f"post_events={config.POST_EVENTS}")
 
@@ -94,6 +118,12 @@ def main() -> None:
         active = {t.track_id for t in tracks if t.track_id >= 0}
 
         for rule in rules:
+            # Outside its window the rule is not merely silenced — it is not
+            # updated at all, so dwell timers and "already alerted" state do not
+            # accumulate against people who were legitimately there. A loitering
+            # timer that ran all day would fire the instant the window opened.
+            if not schedule_active(schedules, rule.feature, now):
+                continue
             try:
                 for detail in rule.update(tracks, frame_no, now):
                     snap = save_snapshot(frame, detail)

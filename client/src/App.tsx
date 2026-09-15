@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "./lib/queryClient";
+import { queryClient, apiRequest, apiRequestForPortal, currentPortal, type ApiError } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -8,45 +8,91 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import LoginPage from "@/components/LoginPage";
 import AppSidebar from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
-import LiveView from "@/components/LiveView";
-import AddCameraForm from "@/components/AddCameraForm";
-import PlaybackView from "@/components/PlaybackView";
-import LivePlayerModal from "@/components/LivePlayerModal";
+const OperationsDashboard = lazy(() => import("@/components/OperationsDashboard"));
+const EventsCenter = lazy(() => import("@/components/EventsCenter"));
+const LiveView = lazy(() => import("@/components/LiveView"));
+const AddCameraForm = lazy(() => import("@/components/AddCameraForm"));
+const PlaybackView = lazy(() => import("@/components/PlaybackView"));
+const LivePlayerModal = lazy(() => import("@/components/LivePlayerModal"));
 
-import CameraList from "@/components/cameralist";
-import SuperAdminConsole from "@/components/SuperAdminConsole";
-import AuditLogView from "@/components/AuditLogView";
-import OrgUsers from "@/components/OrgUsers";
-import AlertsView from "@/components/AlertsView";
-import VehicleEventsView from "@/components/VehicleEventsView";
-import FaceEventsView from "@/components/FaceEventsView";
+const CameraList = lazy(() => import("@/components/cameralist"));
+const SuperAdminConsole = lazy(() => import("@/components/SuperAdminConsole"));
+const ClientSettings = lazy(() => import("@/components/ClientSettings"));
+const AuditLogView = lazy(() => import("@/components/AuditLogView"));
+const OrgUsers = lazy(() => import("@/components/OrgUsers"));
+const AnalyticsSetupView = lazy(() => import("@/components/AnalyticsSetupView"));
 import { Camera } from "@/components/CameraCard";
 import { AuthContext, isSameSession, type AuthUser } from "@/lib/auth";
+import { setAppTimezone } from "@shared/analyticsConfig";
+import { AlertTriangle } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 
-type View = "login" | "live" | "add-camera" | "camera-list" | "logout" | "playback" | "users" | "alerts" | "vehicles" | "faces" | "audit";
+type View =
+  | "login" | "operations" | "live" | "add-camera" | "camera-list" | "logout" | "playback"
+  | "users" | "events" | "alerts" | "vehicles" | "faces" | "people" | "analytics-setup"
+  | "audit" | "settings";
+
+/** Sidebar path -> view. One table, so the sidebar and the router cannot drift. */
+const VIEW_FOR_PATH: Record<string, View> = {
+  "/operations": "operations",
+  "/live": "live",
+  "/add-camera": "add-camera",
+  "/playback": "playback",
+  "/cameralist": "camera-list",
+  "/analytics-setup": "analytics-setup",
+  "/events": "events",
+  "/people": "people",
+  "/alerts": "alerts",
+  "/vehicles": "vehicles",
+  "/faces": "faces",
+  "/users": "users",
+  "/audit": "audit",
+  "/settings": "settings",
+  "/logout": "logout",
+};
+
+const PATH_FOR_VIEW: Record<string, string> = Object.fromEntries(
+  Object.entries(VIEW_FOR_PATH).map(([path, view]) => [view, path])
+);
 
 function Dashboard({ onLogout, username }: { onLogout: () => void; username: string }) {
-  console.log("🟦 Dashboard Rendered");
-
-  const [currentView, setCurrentView] = useState<View>("live");
+  const [currentView, setCurrentView] = useState<View>("operations");
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Route chunks are loaded on demand. Eagerly prefetching every client page
+  // after login made slower browsers/networks feel stuck because the clicked
+  // page had to compete with a burst of background downloads.
+
   const { toast } = useToast();
 
-  const { data: cameras = [], refetch: refetchCameras } = useQuery<Camera[]>({
+  const {
+    data: cameras = [],
+    refetch: refetchCameras,
+    error: camerasError,
+  } = useQuery<Camera[], ApiError>({
     queryKey: ["/api/cameras"],
     refetchInterval: 10_000,
   });
 
-  useEffect(() => {
-    console.log("📡 Cameras Loaded:", cameras);
-  }, [cameras]);
+  // A failed camera fetch is NOT an empty camera list.
+  //
+  // Without this the licence gate on /api/cameras produced the worst possible
+  // screen: an organisation whose VMS licence was missing saw "No cameras added
+  // yet — add your first camera to start monitoring", was unable to add one,
+  // and was told by Analytics Setup to "add a camera first". Every message on
+  // screen was wrong, and the real cause appeared nowhere.
+  const cameraBlocked = camerasError ? camerasError.message : null;
+
+  /** Views that cannot function without the camera list. */
+  const CAMERA_DEPENDENT: View[] = [
+    "live", "add-camera", "camera-list", "playback", "analytics-setup",
+  ];
+
 
   const createCameraMutation = useMutation({
     mutationFn: async (cameraData: any) => {
@@ -54,8 +100,6 @@ function Dashboard({ onLogout, username }: { onLogout: () => void; username: str
       return response.json();
     },
     onSuccess: (data) => {
-      console.log("📷 Camera Created:", data);
-
       refetchCameras();
       setCurrentView("live");
 
@@ -76,62 +120,32 @@ function Dashboard({ onLogout, username }: { onLogout: () => void; username: str
   });
 
   const handleNavigate = (path: string) => {
-    console.log("🔀 Navigation Clicked →", path);
-
     if (path === "/logout") {
-      console.log("🚪 Logging out...");
       onLogout();
       return;
     }
 
-    const viewMap: Record<string, View> = {
-      "/live": "live",
-      "/add-camera": "add-camera",
-      "/playback": "playback",
-      "/cameralist": "camera-list",
-      "/alerts": "alerts",
-      "/vehicles": "vehicles",
-      "/faces": "faces",
-      "/users": "users",
-      "/audit": "audit",
-      "/logout": "logout",
-    };
-
-    setCurrentView(viewMap[path] || "live");
+    setCurrentView(VIEW_FOR_PATH[path] || "operations");
   };
 
   const handleViewCamera = (camera: Camera) => {
-    console.log("🎬 handleViewCamera CALLED:", camera);
-
     setSelectedCamera(camera);
     setIsPlayerOpen(true);
   };
 
-  useEffect(() => {
-    console.log("🎯 selectedCamera UPDATED:", selectedCamera);
-  }, [selectedCamera]);
-
-  useEffect(() => {
-    console.log("📺 isPlayerOpen:", isPlayerOpen);
-  }, [isPlayerOpen]);
-
   const handleAudioToggle = (camera: Camera) => {
-    console.log("🔊 Audio Toggle:", camera);
     toast({ title: "Audio toggled" });
   };
 
   const handleSnapshot = (camera: Camera) => {
-    console.log("📸 Snapshot Clicked:", camera);
     toast({ title: "Snapshot saved" });
   };
 
   const handleFullscreen = (camera: Camera) => {
-    console.log("🖥️ Fullscreen Clicked:", camera);
     handleViewCamera(camera);
   };
 
   const handleSaveCamera = (cameraData: any) => {
-    console.log("💾 Saving camera:", cameraData);
     createCameraMutation.mutate(cameraData);
   };
 
@@ -144,20 +158,58 @@ function Dashboard({ onLogout, username }: { onLogout: () => void; username: str
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full overflow-hidden">
-        <AppSidebar currentPath="/" onNavigate={handleNavigate} />
+        {/* The real path, not a constant: with "/" hard-coded no menu item ever
+            showed as active, so the sidebar never told anyone where they were. */}
+        <AppSidebar
+          currentPath={PATH_FOR_VIEW[currentView] ?? "/live"}
+          onNavigate={handleNavigate}
+        />
 
         <div className="flex flex-col flex-1 overflow-hidden">
           <TopHeader
             onSearch={(q) => {
-              console.log("🔍 Search Query:", q);
               setSearchQuery(q);
             }}
             username={username}
             onLogout={onLogout}
           />
 
-          <main className="flex-1 overflow-auto p-6">
-            {currentView === "live" && (
+          <main className="flex-1 overflow-auto p-6"><Suspense fallback={<div role="status" className="p-8 text-sm text-muted-foreground">Loading view…</div>}>
+            {cameraBlocked && (
+              <div
+                role="alert"
+                className="mx-auto mb-6 flex max-w-5xl items-start gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm"
+              >
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                <div>
+                  <p className="font-medium text-destructive">
+                    Cameras could not be loaded
+                  </p>
+                  {/* The server's own sentence: it distinguishes "never
+                      licensed" from "expired" from "suspended", which is what
+                      decides whether the client calls their provider or checks
+                      their billing. */}
+                  <p className="mt-1 text-foreground/80">{cameraBlocked}</p>
+                </div>
+              </div>
+            )}
+
+            {/* When the camera list is unreachable these screens can only
+                mislead — "No cameras added yet", "Add a camera first" — so the
+                explanation replaces them rather than sitting above them. The
+                analytics event screens still work and are left alone. */}
+            {cameraBlocked && CAMERA_DEPENDENT.includes(currentView) && (
+              <p className="mx-auto max-w-5xl text-sm text-muted-foreground">
+                This screen needs the camera list, so there is nothing to show
+                until the problem above is resolved.
+              </p>
+            )}
+
+            {currentView === "operations" && (
+              <OperationsDashboard cameras={cameras} cameraBlocked={cameraBlocked} onNavigate={handleNavigate} />
+            )}
+
+            {!cameraBlocked && currentView === "live" && (
               <LiveView
                 cameras={filteredCameras}
                 onViewCamera={handleViewCamera}
@@ -165,27 +217,24 @@ function Dashboard({ onLogout, username }: { onLogout: () => void; username: str
                 onSnapshot={handleSnapshot}
                 onFullscreen={handleFullscreen}
                 onAddCamera={() => {
-                  console.log("➕ Add Camera Clicked");
                   setCurrentView("add-camera");
                 }}
               />
             )}
 
-            {currentView === "add-camera" && (
+            {!cameraBlocked && currentView === "add-camera" && (
               <AddCameraForm
                 onSave={handleSaveCamera}
                 onCancel={() => {
-                  console.log("❌ Cancel Add Camera");
                   setCurrentView("live");
                 }}
               />
             )}
 
-            {currentView === "camera-list" && (
+            {!cameraBlocked && currentView === "camera-list" && (
               <CameraList
                 cameras={filteredCameras}
                 onAddCamera={() => {
-                  console.log("📋 Go to Add Camera");
                   setCurrentView("add-camera");
                 }}
 
@@ -221,28 +270,29 @@ function Dashboard({ onLogout, username }: { onLogout: () => void; username: str
               />
             )}
 
-            {currentView === "playback" && (
+            {!cameraBlocked && currentView === "playback" && (
               <PlaybackView cameras={filteredCameras} />
             )}
 
-            {currentView === "alerts" && <AlertsView cameras={cameras} />}
-            {currentView === "vehicles" && <VehicleEventsView cameras={cameras} />}
-            {currentView === "faces" && <FaceEventsView cameras={cameras} />}
+            {!cameraBlocked && currentView === "analytics-setup" && (
+              <AnalyticsSetupView cameras={cameras} />
+            )}
+            {currentView === "events" && <EventsCenter cameras={cameras} />}
 
             {currentView === "users" && <OrgUsers />}
             {currentView === "audit" && <AuditLogView />}
-          </main>
+            {currentView === "settings" && <ClientSettings />}
+          </Suspense></main>
         </div>
       </div>
 
-      <LivePlayerModal
+      {isPlayerOpen && <Suspense fallback={null}><LivePlayerModal
         camera={selectedCamera}
         isOpen={isPlayerOpen}
         onClose={() => {
-          console.log("❌ Closing Player");
           setIsPlayerOpen(false);
         }}
-      />
+      /></Suspense>}
     </SidebarProvider>
   );
 }
@@ -261,6 +311,9 @@ function App() {
     try {
       const res = await apiRequest("GET", "/api/auth/me");
       const user = (await res.json()) as AuthUser;
+      // Adopt the SITE's timezone before anything renders a time, so no screen
+      // ever briefly shows the viewer's clock instead.
+      if (user.timezone) setAppTimezone(user.timezone);
       setMe(user);
       return user;
     } catch {
@@ -270,6 +323,7 @@ function App() {
   };
 
   useEffect(() => {
+    document.documentElement.dataset.appBuild = "latency-no-prefetch-cache-20260914";
     // Session restore on refresh — don't bounce a valid session to sign-in.
     void loadMe();
   }, []);
@@ -317,16 +371,52 @@ function App() {
   }, [me]);
 
   const loginMutation = useMutation({
-    mutationFn: async ({ login, password }: { login: string; password: string }) => {
-      const response = await apiRequest("POST", "/api/auth/login", { email: login, password });
-      return response.json();
+    mutationFn: async ({
+      login,
+      password,
+      remember,
+    }: {
+      login: string;
+      password: string;
+      remember: boolean;
+    }) => {
+      const body = {
+        email: login,
+        password,
+        // The login form has always collected this and it was dropped here, so
+        // "Remember Me" changed nothing and everyone got a 30-day cookie. On a
+        // shared control-room PC that is the opposite of what unticking it
+        // means.
+        remember,
+      };
+      let response = await apiRequest("POST", "/api/auth/login", body);
+      const result = await response.json();
+
+      // A super-admin signing in from the plain root URL initially talks to the
+      // client portal, because the role is not known until after credentials are
+      // checked. Move that login into the admin session cookie immediately;
+      // otherwise the shell renders but every /api/admin request is 401.
+      if (result?.user?.role === "super_admin" && currentPortal() !== "admin") {
+        await apiRequestForPortal("client", "POST", "/api/auth/logout").catch(() => {});
+        window.location.hash = "#/admin/overview";
+        response = await apiRequestForPortal("admin", "POST", "/api/auth/login", body);
+        return response.json();
+      }
+
+      return result;
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       // Also cleared here: a failed/abandoned session on this browser may have
       // left cached responses belonging to a different user.
       queryClient.clear();
       setSessionTakenOver(null);
-      await loadMe();
+      const user = result?.user as AuthUser | undefined;
+      if (user) {
+        if (user.timezone) setAppTimezone(user.timezone);
+        setMe(user);
+      } else {
+        await loadMe();
+      }
       toast({ title: "Login successful" });
     },
     onError: () => {
@@ -334,8 +424,8 @@ function App() {
     },
   });
 
-  const handleLogin = (login: string, password: string) => {
-    loginMutation.mutate({ login, password });
+  const handleLogin = (login: string, password: string, remember: boolean) => {
+    loginMutation.mutate({ login, password, remember });
   };
 
   const handleLogout = async () => {
@@ -381,11 +471,13 @@ function App() {
   // everyone else gets the VMS operator app scoped to their org.
   return (
     <AuthContext.Provider value={me}>
+      <Suspense fallback={<div role="status" className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading application…</div>}>
       {me.role === "super_admin" ? (
         <SuperAdminConsole onLogout={handleLogout} />
       ) : (
         <Dashboard onLogout={handleLogout} username={me.username} />
       )}
+    </Suspense>
     </AuthContext.Provider>
   );
 }

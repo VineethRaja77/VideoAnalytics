@@ -35,6 +35,7 @@ interface Expectation {
  */
 const EXPECTED: Expectation[] = [
   { table: "organizations", columns: ["ingest_key_hash"], migration: "0004_analytics_workers_and_encryption.sql" },
+  { table: "organizations", columns: ["logo_data_url"], migration: "0010_branding.sql" },
   { table: "users", migration: "0000_last_surge.sql" },
   { table: "products", migration: "0001_yummy_outlaw_kid.sql" },
   { table: "licenses", columns: ["signed_license", "machine_fingerprint"], migration: "0002_perfect_scarlet_spider.sql" },
@@ -47,6 +48,7 @@ const EXPECTED: Expectation[] = [
   { table: "devices", columns: ["external_id", "feature", "heartbeat_seconds"], migration: "0007_sensors.sql" },
   { table: "sensor_readings", columns: ["metric", "value", "quality"], migration: "0007_sensors.sql" },
   { table: "sensor_rules", columns: ["op", "threshold", "for_seconds"], migration: "0007_sensors.sql" },
+  { table: "platform_settings", columns: ["key", "value"], migration: "0010_branding.sql" },
   { table: "session", migration: "created automatically by connect-pg-simple" },
 ];
 

@@ -6,9 +6,15 @@
 //   1. The session ID is REGENERATED at login. Without it, a session id planted
 //      on a shared machine stays valid after a real user signs in and hands the
 //      planter that user's session — textbook session fixation.
-//   2. A second login rebinds the SAME cookie jar. This is inherent to cookie
-//      auth and cannot be fixed server-side; it is pinned here so the behaviour
-//      is known, and so the client-side lock has a defined trigger.
+//   2. A second login rebinds the SAME cookie jar WITHIN ONE PORTAL. Two
+//      logins to the client portal in one browser still collide -- that part
+//      is inherent to cookie auth and cannot be fixed server-side, so it is
+//      pinned here as known behaviour, and it is why the client-side lock
+//      exists. What CAN be fixed, and is fixed, is the platform console and
+//      the client portal colliding with EACH OTHER: they are issued separate
+//      cookies (vms.admin.sid / vms.client.sid), so a super admin auditing a
+//      client's data in one tab does not get logged out the moment that
+//      client's own admin signs in from another tab.
 //   3. The absolute timeout is enforced SERVER-SIDE, not by cookie expiry —
 //      the client controls the cookie and can replay an old one.
 
@@ -55,7 +61,9 @@ function buildApp(): express.Express {
   a.post("/login", async (req, res) => {
     const user = await storage.getUserByLogin(req.body.login);
     if (!user) return res.status(401).json({ error: "no" });
-    await establishSession(req, user.id);
+    // Mirrors routes.ts, including the default: an absent `remember` means the
+    // long-lived cookie, so an older client keeps working.
+    await establishSession(req, user.id, req.body.remember !== false);
     res.json({ ok: true, userId: user.id });
   });
 
@@ -66,18 +74,34 @@ function buildApp(): express.Express {
   });
 
   a.get("/me", requireAuth, (req, res) => {
-    res.json({ userId: req.user!.id, username: req.user!.username, role: req.user!.role });
+    res.json({
+      userId: req.user!.id,
+      username: req.user!.username,
+      role: req.user!.role,
+      // The lifetime the cookie would be re-sent with. `rolling: true` re-stamps
+      // this from the global config on every response, so it is the only place
+      // the "keep me signed in" choice can be observed surviving — or not.
+      cookieMaxAge: req.session.cookie.maxAge ?? null,
+      persistent: req.session.persistent ?? null,
+    });
   });
 
   a.post("/logout", (req, res) => req.session.destroy(() => res.json({ ok: true })));
   return a;
 }
 
+/** The full Set-Cookie string, so its attributes can be inspected. */
+function rawCookieOf(res: request.Response): string | undefined {
+  const raw = res.headers["set-cookie"];
+  if (!raw) return undefined;
+  return (Array.isArray(raw) ? raw : [raw]).find((c) => c.startsWith("vms.client.sid="));
+}
+
 /** The session cookie from a supertest response, if one was set. */
 function cookieOf(res: request.Response): string | undefined {
   const raw = res.headers["set-cookie"];
   if (!raw) return undefined;
-  return (Array.isArray(raw) ? raw : [raw]).find((c) => c.startsWith("vms.sid="))?.split(";")[0];
+  return (Array.isArray(raw) ? raw : [raw]).find((c) => c.startsWith("vms.client.sid="))?.split(";")[0];
 }
 
 beforeAll(async () => {
@@ -191,6 +215,48 @@ describe("two users, one browser", () => {
     expect((await browserA.get("/me")).body.role).toBe("client_admin");
     expect((await browserB.get("/me")).body.role).toBe("client_employee");
   });
+
+  it("does NOT mix the platform console and the client portal in ONE browser", async () => {
+    // The real report: a super admin signed in to the platform console in one
+    // tab, then signed in as a client admin in a second tab of the SAME
+    // browser — and the first tab was logged out. That happened because both
+    // portals shared one cookie name, so the second login silently overwrote
+    // the first. Real requests from each portal carry X-VMS-Portal, so the
+    // two now land on separate cookies (vms.admin.sid / vms.client.sid) in
+    // the very same cookie jar.
+    const browser = request.agent(app);
+
+    await browser.post("/login").set("X-VMS-Portal", "admin").send({ login: "admin@a.test" });
+    expect((await browser.get("/me").set("X-VMS-Portal", "admin")).body.role).toBe("client_admin");
+
+    // A second, unrelated login to the CLIENT portal in the same browser.
+    await browser.post("/login").send({ login: "emp@a.test" });
+    expect((await browser.get("/me")).body.role).toBe("client_employee");
+
+    // The admin portal tab must still be signed in as the admin — this is the
+    // assertion that was failing before the cookies were split.
+    const stillAdmin = await browser.get("/me").set("X-VMS-Portal", "admin");
+    expect(stillAdmin.status).toBe(200);
+    expect(stillAdmin.body.role).toBe("client_admin");
+    expect(stillAdmin.body.userId).toBe(adminId);
+  });
+
+  it("keeps the two portal cookies genuinely separate on the wire", async () => {
+    // cookieOf() only recognises vms.client.sid, so the admin-portal response
+    // is inspected directly here.
+    const adminSetCookie = (
+      await request(app).post("/login").set("X-VMS-Portal", "admin").send({ login: "admin@a.test" })
+    ).headers["set-cookie"] as unknown as string[];
+    const clientCookie = cookieOf(
+      await request(app).post("/login").send({ login: "emp@a.test" }),
+    );
+    const adminCookie = (Array.isArray(adminSetCookie) ? adminSetCookie : [adminSetCookie])
+      .find((c) => c.startsWith("vms.admin.sid="));
+
+    expect(adminCookie).toBeDefined();
+    expect(clientCookie).toBeDefined();
+    expect(adminCookie!.split(";")[0]).not.toBe(clientCookie);
+  });
 });
 
 /* ------------------------------------------------------------ lifetime */
@@ -248,8 +314,86 @@ describe("session lifetime", () => {
     // httpOnly is what stops XSS from lifting a 30-day session.
     const res = await request(app).post("/login").send({ login: "admin@a.test" });
     const raw = res.headers["set-cookie"] as unknown as string[];
-    const cookie = (Array.isArray(raw) ? raw : [raw]).find((c) => c.startsWith("vms.sid="))!;
+    const cookie = (Array.isArray(raw) ? raw : [raw]).find((c) => c.startsWith("vms.client.sid="))!;
     expect(cookie.toLowerCase()).toContain("httponly");
     expect(cookie.toLowerCase()).toContain("samesite=lax");
+  });
+});
+
+/* ------------------------------------------ "keep me signed in" */
+
+describe('"keep me signed in"', () => {
+  // The checkbox existed on the login screen from the start and was dropped
+  // between the form and the request, so every login got the full 30-day
+  // cookie whether it was ticked or not. On a shared control-room PC that is
+  // the opposite of what leaving it unticked means.
+
+  it("gives an unticked login a cookie that dies with the browser", async () => {
+    const res = await request(app).post("/login").send({ login: "admin@a.test", remember: false });
+    const cookie = rawCookieOf(res)!;
+    expect(cookie).toBeDefined();
+    // No Expires and no Max-Age is what makes a browser discard it on close.
+    expect(cookie).not.toMatch(/Expires=/i);
+    expect(cookie).not.toMatch(/Max-Age=/i);
+  });
+
+  it("gives a ticked login a long-lived cookie", async () => {
+    const res = await request(app).post("/login").send({ login: "admin@a.test", remember: true });
+    expect(rawCookieOf(res)!).toMatch(/Expires=/i);
+  });
+
+  it("defaults to long-lived when the field is absent", async () => {
+    // Backward compatibility: a client that does not know about the field must
+    // not have its users silently logged out when they close the browser.
+    const res = await request(app).post("/login").send({ login: "admin@a.test" });
+    expect(rawCookieOf(res)!).toMatch(/Expires=/i);
+  });
+
+  it("does NOT quietly upgrade an unticked session on later requests", async () => {
+    // `rolling: true` re-stamps maxAge from the global config on every
+    // response. Without the guard in requireAuth, the very first authenticated
+    // request turns a browser-session cookie into a 30-day one — exactly the
+    // outcome the user declined, and invisibly.
+    //
+    // Asserting on the response's Set-Cookie header does NOT catch this:
+    // express-session often sends no header at all on these requests, so the
+    // assertion is skipped and the test passes with the guard deleted. The
+    // cookie's own maxAge is the thing that actually decides.
+    const agent = request.agent(app);
+    await agent.post("/login").send({ login: "admin@a.test", remember: false });
+    for (let i = 0; i < 3; i++) {
+      const res = await agent.get("/me");
+      expect(res.status).toBe(200);
+      expect(res.body.persistent).toBe(false);
+      expect(res.body.cookieMaxAge, `request ${i + 1} re-stamped the lifetime`).toBeNull();
+    }
+  });
+
+  it("keeps the long lifetime for a session that DID ask to be remembered", async () => {
+    const agent = request.agent(app);
+    await agent.post("/login").send({ login: "admin@a.test", remember: true });
+    const res = await agent.get("/me");
+    expect(res.body.persistent).toBe(true);
+    expect(res.body.cookieMaxAge).toBeGreaterThan(0);
+  });
+
+  it("still signs the user in either way", async () => {
+    for (const remember of [true, false]) {
+      const agent = request.agent(app);
+      await agent.post("/login").send({ login: "admin@a.test", remember });
+      const me = await agent.get("/me");
+      expect(me.status, `remember=${remember}`).toBe(200);
+      expect(me.body.role).toBe("client_admin");
+    }
+  });
+
+  it("keeps the absolute cap for a remembered session", async () => {
+    // "Keep me signed in" must not become "signed in forever".
+    const agent = request.agent(app);
+    await agent.post("/login").send({ login: "admin@a.test", remember: true });
+    await agent.post("/backdate").send({ loginAt: Date.now() - 91 * 24 * 60 * 60 * 1000 });
+    const me = await agent.get("/me");
+    expect(me.status).toBe(401);
+    expect(me.body.reason).toBe("absolute_timeout");
   });
 });

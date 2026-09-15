@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, Check } from "lucide-react";
 import { useAuth, canWrite } from "@/lib/auth";
+import { formatDateTime } from "@/lib/datetime";
 
 interface AnalyticsEvent {
   id: string;
@@ -22,7 +23,7 @@ interface CameraLite { id: string; name: string; }
 
 const prettyType = (t: string) => t.replace(/_/g, " ").replace(/\bppe\b/i, "PPE");
 
-export default function AlertsView({ cameras }: { cameras: CameraLite[] }) {
+export default function AlertsView({ cameras, compact = false }: { cameras: CameraLite[]; compact?: boolean }) {
   const auth = useAuth();
   const writable = canWrite(auth.role);
   const camName = (id: string | null) => cameras.find((c) => c.id === id)?.name ?? (id ? id.slice(0, 8) : "—");
@@ -43,9 +44,11 @@ export default function AlertsView({ cameras }: { cameras: CameraLite[] }) {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <h2 className="text-xl font-semibold flex items-center gap-2">
-        <ShieldAlert className="h-5 w-5 text-primary" /> Safety Alerts
-      </h2>
+      {!compact && (
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5 text-primary" /> Safety Alerts
+        </h2>
+      )}
 
       <Card>
         <CardHeader>
@@ -70,7 +73,7 @@ export default function AlertsView({ cameras }: { cameras: CameraLite[] }) {
               )}
               {events.map((e) => (
                 <tr key={e.id} className={`border-b last:border-0 ${e.acknowledged ? "opacity-60" : ""}`} data-testid={`alert-${e.id}`}>
-                  <td className="p-3 whitespace-nowrap">{new Date(e.createdAt).toLocaleString()}</td>
+                  <td className="p-3 whitespace-nowrap">{formatDateTime(e.createdAt)}</td>
                   <td className="p-3">{camName(e.cameraId)}</td>
                   <td className="p-3">
                     <Badge variant="destructive" className="capitalize">{prettyType(e.type)}</Badge>

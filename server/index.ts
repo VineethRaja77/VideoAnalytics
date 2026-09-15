@@ -8,6 +8,7 @@ import { seedPlatform } from "./seed";
 import { assertSchemaCurrent, assertConfigUsable } from "./schemaCheck";
 import { initLicensing } from "./licenseClient";
 import { applySecurityHeaders, apiLimiter, requireSameOrigin } from "./security";
+import { FACE_BODY_LIMIT } from "./faceRoutes";
 
 const app = express();
 
@@ -79,12 +80,23 @@ declare module "http" {
   }
 }
 
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  })
+/* Face enrolment carries photographs, so its body is far larger than anything
+   else in the product. The bigger limit is applied to THAT ROUTE ONLY: raising
+   the global limit would let any endpoint — including unauthenticated ones — be
+   used to make the server allocate megabytes per request. */
+const captureRawBody = (req: any, _res: any, buf: Buffer) => {
+  req.rawBody = buf;
+};
+const standardJson = express.json({ verify: captureRawBody });
+const largeJson = express.json({ limit: FACE_BODY_LIMIT, verify: captureRawBody });
+const LARGE_BODY_PATHS = [/^\/api\/face\/people\/?$/];
+
+app.use((req, res, next) =>
+  (LARGE_BODY_PATHS.some((re) => re.test(req.path)) ? largeJson : standardJson)(
+    req,
+    res,
+    next
+  )
 );
 
 app.use(express.urlencoded({ extended: false }));

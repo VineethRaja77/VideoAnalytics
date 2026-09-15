@@ -14,7 +14,20 @@ from __future__ import annotations
 import time
 from collections import defaultdict, deque
 
-from .zones import CountingLine, feet, parse_polygon, point_in_polygon, polygon_area
+from .zones import (
+    CountingLine, feet, parse_polygon, parse_polygons, point_in_any,
+    point_in_polygon, polygon_area, total_area,
+)
+
+
+class RuleNotConfigured(Exception):
+    """A licensed rule cannot run until an operator configures it.
+
+    Distinct from a crash: the client bought the feature and the worker is
+    healthy, but a required zone or line has not been drawn yet. The supervisor
+    surfaces this to the client admin as a configuration prompt rather than
+    restart-looping a worker that can never succeed.
+    """
 
 
 class Rule:
@@ -44,9 +57,29 @@ class IntrusionRule(Rule):
 
     feature = "intrusion"
 
+    #: A zone is MANDATORY for this rule. point_in_polygon() treats an empty
+    #: polygon as "everywhere", which for counting or density is a sensible
+    #: default but for intrusion is a trap: enabling the feature before drawing
+    #: a zone would raise an intrusion alert for EVERY person in frame, at
+    #: sample_fps, forever. The first thing an operator does with a system that
+    #: does that is switch it off. "Restricted area" with no area defined is not
+    #: a permissive default, it is a misconfiguration.
+    requires_zone = True
+
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.zone = parse_polygon(cfg.INTRUSION_ZONE)
+        # SEVERAL areas, not one. A yard camera routinely covers a fuel store
+        # and a transformer bay; forcing them into one polygon means either
+        # covering the walkway between them (false alerts all day) or leaving
+        # one of them unwatched.
+        self.zones = parse_polygons(cfg.INTRUSION_ZONE)
+        if not self.zones:
+            raise RuleNotConfigured(
+                "intrusion needs a restricted zone. Draw one on the camera in "
+                "Analytics settings, or set INTRUSION_ZONE to a polygon "
+                '("x1,y1,x2,y2,x3,y3,..."). Refusing to run: with no zone every '
+                "person in frame is an intruder."
+            )
         self.min_frames = cfg.INTRUSION_MIN_FRAMES
         self.cooldown = cfg.ALERT_COOLDOWN_S
         self.inside_since: dict[int, int] = {}
@@ -56,7 +89,7 @@ class IntrusionRule(Rule):
         out = []
         present = set()
         for t in tracks:
-            inside = point_in_polygon(feet(t.bbox), self.zone)
+            inside = point_in_any(feet(t.bbox), self.zones)
             if not inside:
                 self.inside_since.pop(t.track_id, None)
                 continue
@@ -144,7 +177,7 @@ class LoiteringRule(Rule):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.zone = parse_polygon(cfg.LOITER_ZONE or cfg.INTRUSION_ZONE)
+        self.zones = parse_polygons(cfg.LOITER_ZONE or cfg.INTRUSION_ZONE)
         self.seconds = cfg.LOITER_SECONDS
         self.cooldown = cfg.ALERT_COOLDOWN_S
         self.since: dict[int, float] = {}
@@ -153,7 +186,9 @@ class LoiteringRule(Rule):
     def update(self, tracks, frame_no, now):
         out = []
         for t in tracks:
-            if not point_in_polygon(feet(t.bbox), self.zone):
+            # No areas drawn = watch the whole frame, which is the sensible
+            # default for loitering (unlike intrusion, where it means everyone).
+            if self.zones and not point_in_any(feet(t.bbox), self.zones):
                 self.since.pop(t.track_id, None)
                 continue
             start = self.since.setdefault(t.track_id, now)
@@ -191,15 +226,16 @@ class CrowdDensityRule(Rule):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.zone = parse_polygon(cfg.CROWD_ZONE or cfg.INTRUSION_ZONE)
+        self.zones = parse_polygons(cfg.CROWD_ZONE or cfg.INTRUSION_ZONE)
         self.limit = cfg.CROWD_LIMIT
         self.window = deque(maxlen=max(1, cfg.CROWD_WINDOW_FRAMES))
         self.cooldown = cfg.ALERT_COOLDOWN_S
         self.last_alert = 0.0
-        self.area_px = polygon_area(self.zone)
+        self.area_px = total_area(self.zones)
 
     def update(self, tracks, frame_no, now):
-        n = sum(1 for t in tracks if point_in_polygon(feet(t.bbox), self.zone))
+        n = sum(1 for t in tracks
+                if not self.zones or point_in_any(feet(t.bbox), self.zones))
         self.window.append(n)
         s = sorted(self.window)
         median = s[len(s) // 2]
@@ -229,13 +265,18 @@ class QueueDwellRule(Rule):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.zone = parse_polygon(cfg.QUEUE_ZONE or cfg.INTRUSION_ZONE)
+        self.zones = parse_polygons(cfg.QUEUE_ZONE or cfg.INTRUSION_ZONE)
+        if not self.zones:
+            raise RuleNotConfigured(
+                "queue_dwell needs a queue area. Draw one on the camera in "
+                "Analytics settings, or set QUEUE_ZONE."
+            )
         self.interval = cfg.QUEUE_SUMMARY_INTERVAL_S
         self.last = time.time()
         self.since: dict[int, float] = {}
 
     def update(self, tracks, frame_no, now):
-        in_zone = [t for t in tracks if point_in_polygon(feet(t.bbox), self.zone)]
+        in_zone = [t for t in tracks if point_in_any(feet(t.bbox), self.zones)]
         ids = {t.track_id for t in in_zone}
         for t in in_zone:
             self.since.setdefault(t.track_id, now)
@@ -380,11 +421,17 @@ RULES: dict[str, type[Rule]] = {
 }
 
 
-def build_rules(features, cfg) -> list[Rule]:
+def build_rules(features, cfg, report: list | None = None) -> list[Rule]:
     """Instantiate ONLY the licensed features. An unknown name is skipped with a
     warning rather than crashing the worker — the platform is the authority on
-    what is licensed, and a newer server may know features this build does not."""
+    what is licensed, and a newer server may know features this build does not.
+
+    `report`, if given, is filled with (feature, reason) for every licensed rule
+    that could not start because it still needs configuring. The caller needs
+    that to tell "this camera is waiting for a zone to be drawn" apart from
+    "this worker is broken" — the first must not be restart-looped."""
     out = []
+    unconfigured: list[tuple[str, str]] = report if report is not None else []
     for f in features:
         f = f.strip()
         if not f:
@@ -393,5 +440,25 @@ def build_rules(features, cfg) -> list[Rule]:
         if cls is None:
             print(f"[rules] unknown feature '{f}' — skipping")
             continue
-        out.append(cls(cfg))
+        try:
+            out.append(cls(cfg))
+        except RuleNotConfigured as e:
+            # NOT a crash. The client owns this feature and the worker is fine;
+            # an operator simply has not drawn the zone yet. Skip this one rule
+            # and keep every other licensed feature running — killing the whole
+            # worker would take down analytics the client HAS configured.
+            print(f"[rules] '{f}' NOT STARTED — {e}")
+            unconfigured.append((f, str(e)))
+        except ValueError as e:
+            # A MALFORMED zone or line — parse_polygon and CountingLine raise
+            # ValueError on a bad spec. Treated exactly like "not configured"
+            # rather than allowed to propagate: an uncaught exception here kills
+            # the worker, and the supervisor then restart-loops it forever
+            # against a config that can never parse. One bad polygon must not
+            # take down the other six analytics on that camera.
+            print(f"[rules] '{f}' NOT STARTED — bad geometry: {e}")
+            unconfigured.append((f, f"bad geometry: {e}"))
+    if unconfigured:
+        print(f"[rules] {len(unconfigured)} licensed feature(s) await configuration: "
+              f"{', '.join(f for f, _ in unconfigured)}")
     return out

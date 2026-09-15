@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 import {
   Dialog,
@@ -24,6 +25,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { formatDateTime } from "@/lib/datetime";
 
 interface VmsNotification {
   id: string;
@@ -42,7 +44,7 @@ interface TopHeaderProps {
   onLogout?: () => void;
 }
 
-function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -60,8 +62,8 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
       toast({ title: "Passwords don't match", variant: "destructive" });
       return;
     }
-    if (newPassword.length < 8) {
-      toast({ title: "New password must be at least 8 characters", variant: "destructive" });
+    if (newPassword.length < 12) {
+      toast({ title: "New password must be at least 12 characters", variant: "destructive" });
       return;
     }
 
@@ -138,6 +140,7 @@ export default function TopHeader({
   username = "Admin User",
   onLogout,
 }: TopHeaderProps) {
+  const auth = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState<string>(
     () => localStorage.getItem(LAST_SEEN_KEY) || new Date(0).toISOString()
@@ -161,6 +164,10 @@ export default function TopHeader({
       {/* LEFT SIDE: Sidebar Button + Search Bar */}
       <div className="flex items-center gap-4">
         <SidebarTrigger data-testid="button-sidebar-toggle" />
+        <div className="hidden items-center gap-2 lg:flex">
+          {auth.organizationLogoDataUrl && <img src={auth.organizationLogoDataUrl} alt="Organization logo" className="h-8 w-8 rounded border object-contain" />}
+          <span className="max-w-48 truncate text-sm font-semibold">{auth.organizationName}</span>
+        </div>
 
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -185,7 +192,15 @@ export default function TopHeader({
             <Button
               size="icon"
               variant="ghost"
-              className="relative"
+              className="relative cursor-pointer"
+              // Icon-only, so the count has to be in the name too — otherwise a
+              // screen reader announces "button" and the badge is invisible.
+              aria-label={
+                unreadCount > 0
+                  ? `Notifications, ${unreadCount} unread`
+                  : "Notifications"
+              }
+              title="Notifications"
               data-testid="button-notifications"
             >
               <Bell className="h-5 w-5" />
@@ -212,7 +227,7 @@ export default function TopHeader({
                 <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 cursor-default">
                   <span className="text-sm">{n.message}</span>
                   <span className="text-xs text-muted-foreground">
-                    {new Date(n.createdAt).toLocaleString()}
+                    {formatDateTime(n.createdAt)}
                   </span>
                 </DropdownMenuItem>
               ))
@@ -223,7 +238,14 @@ export default function TopHeader({
         {/* PROFILE DROPDOWN */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" data-testid="button-profile">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="cursor-pointer"
+              aria-label="Your account"
+              title="Your account"
+              data-testid="button-profile"
+            >
               <User className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>

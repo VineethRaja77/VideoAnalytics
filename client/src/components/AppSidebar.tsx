@@ -1,5 +1,6 @@
-import { Video, Plus, PlaySquare, List, LogOut, Users, ShieldAlert, Car, ScanFace,
-  ShieldCheck,
+import {
+  Video, Plus, PlaySquare, List, LogOut, Users, ShieldAlert, LayoutDashboard,
+  ShieldCheck, SlidersHorizontal, Settings,
 } from "lucide-react";
 import {
   Sidebar,
@@ -11,7 +12,10 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar";
-import { useAuth, canWrite, canManageOrgUsers, hasModule } from "@/lib/auth";
+import { MODULE_FEATURES } from "@shared/schema";
+import {
+  useAuth, canWrite, canManageOrgUsers, hasAnyModule,
+} from "@/lib/auth";
 
 interface MenuItem {
   title: string;
@@ -19,20 +23,45 @@ interface MenuItem {
   path: string;
   requiresWrite?: boolean;
   requiresAdmin?: boolean;
-  requiresModule?: string; // licence FEATURE key (see MODULE_FEATURES in shared/schema)
+  /**
+   * Licence FEATURE keys, ANY of which reveals this item.
+   *
+   * A list, not a single key: a screen shows a whole module's events, so gating
+   * it on one feature hid it from clients who had bought a different feature of
+   * the same module. A client licensed only for wrong-way driving had no
+   * Vehicles menu item at all — they were paying for something with no screen.
+   */
+  requiresAnyFeature?: readonly string[];
 }
 
+/** Every camera analytic — used to decide whether Analytics Setup is useful. */
+const ALL_CAMERA_FEATURES = Object.entries(MODULE_FEATURES)
+  .filter(([mod]) => mod !== "sensors")
+  .flatMap(([, feats]) => feats as readonly string[]);
+
 const allMenuItems: MenuItem[] = [
+  { title: "Operations", icon: LayoutDashboard, path: "/operations" },
   { title: "Live", icon: Video, path: "/live" },
   { title: "Add Camera", icon: Plus, path: "/add-camera", requiresWrite: true },
-  { title: "Camera List", icon: List, path: "/cameralist" },
+  { title: "Cameras", icon: List, path: "/cameralist" },
   { title: "Playback", icon: PlaySquare, path: "/playback" },
-  { title: "PPE Alerts", icon: ShieldAlert, path: "/alerts", requiresModule: "ppe_compliance" },
-  { title: "Vehicles", icon: Car, path: "/vehicles", requiresModule: "vehicle_count" },
-  { title: "Faces", icon: ScanFace, path: "/faces", requiresModule: "face_recognition" },
+  {
+    title: "Analytics Setup",
+    icon: SlidersHorizontal,
+    path: "/analytics-setup",
+    requiresWrite: true,
+    requiresAnyFeature: ALL_CAMERA_FEATURES,
+  },
+  {
+    title: "Events",
+    icon: ShieldAlert,
+    path: "/events",
+    requiresAnyFeature: ALL_CAMERA_FEATURES,
+  },
   { title: "Users", icon: Users, path: "/users", requiresAdmin: true },
   // Admin-only: a manager can change things but must not review who did what.
   { title: "Audit Trail", icon: ShieldCheck, path: "/audit", requiresAdmin: true },
+  { title: "Settings", icon: Settings, path: "/settings" },
   { title: "Logout", icon: LogOut, path: "/logout" },
 ];
 
@@ -46,17 +75,22 @@ export default function AppSidebar({ currentPath, onNavigate }: AppSidebarProps)
   const menuItems = allMenuItems.filter((item) => {
     if (item.requiresWrite && !canWrite(auth.role)) return false;
     if (item.requiresAdmin && !canManageOrgUsers(auth.role)) return false;
-    if (item.requiresModule && !hasModule(auth, item.requiresModule)) return false;
+    if (item.requiresAnyFeature && !hasAnyModule(auth, item.requiresAnyFeature)) {
+      return false;
+    }
     return true;
   });
 
   return (
     <Sidebar>
       <SidebarHeader className="p-6 border-b border-sidebar-border">
-        <div className="text-primary text-2xl font-bold">
-          HYPERSPARK
+        <div className="flex items-center gap-3">
+          {auth.organizationLogoDataUrl && <img src={auth.organizationLogoDataUrl} alt="Organization logo" className="h-10 w-10 rounded-md border object-contain" />}
+          <div className="min-w-0">
+            <div className="truncate text-primary text-xl font-bold">{auth.organizationName ?? "HYPERSPARK"}</div>
+            <p className="text-xs text-muted-foreground mt-1">Video Management</p>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">Video Management</p>
       </SidebarHeader>
 
       <SidebarContent>
@@ -68,8 +102,8 @@ export default function AppSidebar({ currentPath, onNavigate }: AppSidebarProps)
                   <SidebarMenuButton
                     onClick={() => onNavigate(item.path)}
                     isActive={currentPath === item.path}
-                    className="h-11"
-                    data-testid={`nav-${item.title.toLowerCase().replace(" ", "-")}`}
+                    className="h-11 cursor-pointer"
+                    data-testid={`nav-${item.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
                   >
                     <item.icon className="h-5 w-5" />
                     <span className="text-sm font-medium">{item.title}</span>

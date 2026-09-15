@@ -42,6 +42,8 @@ hand-written file.
 | `0006_audit_log.sql` | `audit_log` + its three indexes | DPDP Act 2023: the face module processes biometric data and a Data Fiduciary must show who accessed it |
 | `0007_sensors.sql` | `devices`, `sensor_readings`, `sensor_rules` | **one generic model, not a table per sensor type** — adding "water pH" after shipping must not be a migration |
 | `0008_locations.sql` | `locations` with `parent_id`, `path`, `depth`; `location_id` on cameras and devices | fixed site/building/floor columns cannot express a campus with two towers and a basement car park |
+| `0009_timestamps_are_instants.sql` | normalises timestamp semantics for event/schedule correctness | browser, server and workers must agree on site-time windows without shifting days across time zones |
+| `0010_branding.sql` | `organizations.logo_data_url` and `platform_settings` | organization and platform branding are first-class settings, not hard-coded UI text |
 
 ---
 

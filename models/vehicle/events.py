@@ -48,7 +48,7 @@ def emit_crossing(camera_id: str, detail: dict) -> None:
         "eventId": str(uuid.uuid4()),
         "cameraId": camera_id,
         "trackId": detail.get("trackId"),
-        "at": datetime.datetime.utcnow().isoformat() + "Z",
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "details": detail,
         "snapshot": detail.get("snapshot"),
     }, "CROSS")
@@ -61,6 +61,6 @@ def emit_summary(camera_id: str, counts: dict, window_s: float) -> None:
         "type": "vehicle_count_summary",
         "eventId": str(uuid.uuid4()),
         "cameraId": camera_id,
-        "at": datetime.datetime.utcnow().isoformat() + "Z",
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "details": {"counts": counts, "windowSeconds": round(window_s, 1)},
     }, "SUMMARY")

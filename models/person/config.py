@@ -102,6 +102,11 @@ FALL_ASPECT = _f("FALL_ASPECT", 1.0)
 FALL_DROP_FRACTION = _f("FALL_DROP_FRACTION", 0.15)
 FALL_HOLD_S = _f("FALL_HOLD_S", 2.0)
 
+# When each feature may raise alerts, as JSON from the platform:
+#   {"intrusion": {"days":[0,1,2,3,4,5,6], "from":"22:00", "to":"06:00"}}
+# A feature that is absent has no time limit. See pipeline/schedule.py.
+FEATURE_SCHEDULES = _s("FEATURE_SCHEDULES", "")
+
 # ---- Alerting ----
 ALERT_COOLDOWN_S = _f("ALERT_COOLDOWN_S", 60)
 

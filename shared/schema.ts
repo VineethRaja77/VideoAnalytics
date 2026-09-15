@@ -29,7 +29,8 @@ export const organizations = pgTable("organizations", {
   // a single platform-wide shared key could. The token is high-entropy random,
   // so a fast hash is appropriate here (this is not a user password).
   ingestKeyHash: text("ingest_key_hash").unique(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  logoDataUrl: text("logo_data_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* -------------------------------------------------------
@@ -47,7 +48,7 @@ export const users = pgTable("users", {
   organizationId: varchar("organization_id").references(() => organizations.id),
   role: text("role").notNull().default("client_admin"),
   status: text("status").notNull().default("active"), // active | disabled
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* -------------------------------------------------------
@@ -59,7 +60,7 @@ export const products = pgTable("products", {
   name: text("name").notNull(),
   description: text("description"),
   active: pgBoolean("active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* -------------------------------------------------------
@@ -77,18 +78,24 @@ export const licenses = pgTable(
       .references(() => products.id),
     plan: text("plan").notNull().default("trial"), // monthly | yearly | trial | perpetual
     status: text("status").notNull().default("active"), // active | suspended | expired | trial
-    issuedAt: timestamp("issued_at").notNull().defaultNow(),
-    expiresAt: timestamp("expires_at"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     limits: jsonb("limits"), // { maxCameras, maxUsers }
     // Phase 2 (on-prem cryptographic licensing) — nullable for now:
     machineFingerprint: text("machine_fingerprint"),
     signedLicense: text("signed_license"),
-    lastValidatedAt: timestamp("last_validated_at"),
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
   },
   (t) => ({
     orgProductUnique: uniqueIndex("licenses_org_product_unique").on(t.organizationId, t.productId),
   })
 );
+
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const cameras = pgTable("cameras", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -120,15 +127,15 @@ export const cameras = pgTable("cameras", {
 
   status: text("status").notNull().default("inactive"),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 
   // Recording/runtime metadata (owned by mediamtxController + recordingWorker)
   mediamtxPath: text("mediamtx_path"),
   recordingEnabled: pgBoolean("recording_enabled").notNull().default(true),
   recordingPid: integer("recording_pid"),
   recordingFolder: text("recording_folder"),
-  lastStartedAt: timestamp("last_started_at"),
-  lastHealthCheckAt: timestamp("last_health_check_at"),
+  lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
+  lastHealthCheckAt: timestamp("last_health_check_at", { withTimezone: true }),
 });
 
 /* -------------------------------------------------------
@@ -259,15 +266,20 @@ export const cameraAnalytics = pgTable(
     config: jsonb("config"),
 
     // ---- runtime state, owned by the supervisor ----
-    // stopped | starting | running | crashed | unlicensed
+    // stopped | starting | running | crashed | unlicensed | needs_config
+    // needs_config is NOT a failure: the feature is licensed and the worker is
+    // healthy, but a required zone or line has not been drawn yet. Kept
+    // distinct from `crashed` so the UI does not send a client looking for a
+    // fault, and so the supervisor does not restart-loop a worker that cannot
+    // succeed until an operator acts.
     status: text("status").notNull().default("stopped"),
     pid: integer("pid"),
     restartCount: integer("restart_count").notNull().default(0),
     lastError: text("last_error"),
-    lastStartedAt: timestamp("last_started_at"),
-    lastHeartbeatAt: timestamp("last_heartbeat_at"),
+    lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
 
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     // One binding per (camera, FEATURE). A camera can carry several features of
@@ -306,7 +318,7 @@ export const analyticsEvents = pgTable("analytics_events", {
   details: jsonb("details"),
   snapshot: text("snapshot"),
   acknowledged: pgBoolean("acknowledged").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const recordings = pgTable("recordings", {
@@ -315,8 +327,8 @@ export const recordings = pgTable("recordings", {
   cameraId: varchar("camera_id")
     .notNull()
     .references(() => cameras.id),
-  startTime: timestamp("start_time").notNull(),
-  endTime: timestamp("end_time"),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }),
   filePath: text("file_path").notNull(),
   duration: integer("duration"),
   fileSize: bigint("file_size", { mode: "number" }), // ✅ ADDED
@@ -344,6 +356,19 @@ export const AUDIT_ACTIONS = [
   "recording_viewed", "recording_exported", "recording_deleted",
   "snapshot_viewed",
   "analytics_event_acknowledged",
+  // Face enrolment is the creation and deletion of BIOMETRIC personal data.
+  // Under the DPDP Act 2023 a Data Fiduciary must be able to show who added a
+  // person's face to the system and who removed it, so a rejected attempt is
+  // recorded as well as a successful one.
+  "face_person_enrolled", "face_person_enrol_rejected", "face_person_removed",
+  "face_person_renamed",
+  // A zone or line is the definition of what counts as a security violation.
+  // Moving one changes what the site alerts on, so it is an auditable act.
+  "analytics_zone_changed",
+  // Taking a copy of the event history out of the system is a disclosure of
+  // personal data (who was where, when), so it is recorded like any other read
+  // of that data.
+  "analytics_events_exported",
   "license_issued", "license_revoked", "license_updated",
   "analytics_binding_changed",
   "ingest_token_minted",
@@ -351,6 +376,14 @@ export const AUDIT_ACTIONS = [
   "access_denied",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+/* Every timestamp in this schema is `timestamptz` — an absolute instant, not a
+   bare wall clock. A naive column cannot say which zone it was written in, so
+   the moment any part of the system runs in local time, old UTC rows and new
+   local rows sit in the same column indistinguishable from each other. As an
+   instant, Postgres renders it in whatever zone the reader asks for (psql, the
+   app and the workers all ask for the site's zone), and nothing anywhere adds
+   or subtracts hours by hand. See migrations/0009_timestamps_are_instants.sql. */
 
 export const auditLog = pgTable(
   "audit_log",
@@ -373,7 +406,7 @@ export const auditLog = pgTable(
     detail: jsonb("detail"),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     orgTimeIdx: index("audit_org_time_idx").on(t.organizationId, t.createdAt),
@@ -429,7 +462,7 @@ export const locations = pgTable(
     /** Root = 0. Bounded so a malformed move cannot build an unbounded chain. */
     depth: integer("depth").notNull().default(0),
 
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     orgIdx: index("locations_org_idx").on(t.organizationId),
@@ -508,11 +541,11 @@ export const devices = pgTable(
      * NULL interval = no calibration required (level, flow, energy).
      */
     calibrationIntervalDays: integer("calibration_interval_days"),
-    calibratedAt: timestamp("calibrated_at"),
+    calibratedAt: timestamp("calibrated_at", { withTimezone: true }),
 
     /** Tank geometry, scale factors, Modbus register map, etc. */
     config: jsonb("config"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     orgExtUnique: uniqueIndex("devices_org_external_unique").on(t.organizationId, t.externalId),
@@ -538,7 +571,7 @@ export const sensorReadings = pgTable(
      * but marked, so a dashboard can show it without implying it is trusted.
      */
     quality: text("quality").notNull().default("good"),
-    at: timestamp("at").notNull().defaultNow(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     deviceTimeIdx: index("readings_device_time_idx").on(t.deviceId, t.at),
@@ -570,7 +603,7 @@ export const sensorRules = pgTable(
     severity: text("severity").notNull().default("warning"),
     message: text("message"),
     enabled: pgBoolean("enabled").notNull().default(true),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     orgIdx: index("sensor_rules_org_idx").on(t.organizationId),

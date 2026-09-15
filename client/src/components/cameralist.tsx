@@ -90,10 +90,17 @@ export default function CameraList({
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Camera List</h2>
-        <Button onClick={onAddCamera}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Camera
-        </Button>
+        {/* An employee is read-only. The sidebar already hides Add Camera for
+            them, but this button did not — so a viewer could open the whole
+            form, fill it in, and only find out on submit when the server
+            returned 403. The server was never at risk; the invitation was
+            the bug. */}
+        {writable && (
+          <Button onClick={onAddCamera} className="cursor-pointer">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Camera
+          </Button>
+        )}
       </div>
 
       {cameras.length === 0 ? (
@@ -101,9 +108,15 @@ export default function CameraList({
           <Camera className="h-16 w-16 text-muted-foreground mb-4" />
           <p className="text-lg font-semibold">No cameras available</p>
           <p className="text-sm text-muted-foreground mb-4">
-            Add a new camera to begin
+            {writable
+              ? "Add a new camera to begin"
+              : "No cameras have been added to your organization yet."}
           </p>
-          <Button onClick={onAddCamera}>Add Camera</Button>
+          {writable && (
+            <Button onClick={onAddCamera} className="cursor-pointer">
+              Add Camera
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

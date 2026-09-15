@@ -579,6 +579,26 @@ export interface RecorderStatus {
   lastSegmentAt: number | null;
 }
 
+/**
+ * Whether a recorder is actually RUNNING for each known camera.
+ *
+ * The `cameras.status` column is an administrative flag set when a camera is
+ * created and never touched again — `updateCameraStatus` exists and nothing
+ * calls it. Treating it as connectivity made the platform console report every
+ * configured camera as "online", so a site whose cameras were all dead still
+ * showed green. On a security product that is the worst possible error: the
+ * dashboard is most confident exactly when it is most wrong.
+ *
+ * A camera absent from this map has no recorder in THIS process — which is
+ * "unknown", not "offline". Only a camera we are actually supervising can be
+ * reported as up or down.
+ */
+export function recorderRunningByCamera(): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const [cameraId, state] of recorders) out.set(cameraId, !!state.proc);
+  return out;
+}
+
 export function getRecorderStatus(cameraId: string): RecorderStatus {
   const state = recorders.get(cameraId);
   if (!state) return { running: false, pid: null, restartCount: 0, lastSegmentAt: null };

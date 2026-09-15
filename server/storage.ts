@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
 
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, lt, desc, sql, count as sqlCount } from "drizzle-orm";
 import {
   cameras,
   users,
@@ -15,6 +15,40 @@ import {
   cameraAnalytics,
 } from "@shared/schema";
 import { FEATURE_MODULE } from "@shared/schema";
+
+/** Filters a client can apply to their own event history. */
+export interface AnalyticsEventQuery {
+  module?: string;
+  cameraId?: string;
+  type?: string;
+  /** true = only acknowledged, false = only open. Undefined = both. */
+  acknowledged?: boolean;
+  /** Inclusive lower bound / exclusive upper bound on createdAt. */
+  from?: Date;
+  to?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * One place the filters are turned into SQL, so the LIST and the COUNT can
+ * never disagree. Two copies would eventually differ and the UI would report a
+ * total that does not match the rows under it.
+ */
+function analyticsEventConditions(organizationId: string, opts: AnalyticsEventQuery) {
+  const c = [eq(analyticsEvents.organizationId, organizationId)];
+  if (opts.module) c.push(eq(analyticsEvents.module, opts.module));
+  if (opts.cameraId) c.push(eq(analyticsEvents.cameraId, opts.cameraId));
+  if (opts.type) c.push(eq(analyticsEvents.type, opts.type));
+  if (opts.acknowledged !== undefined) {
+    c.push(eq(analyticsEvents.acknowledged, opts.acknowledged));
+  }
+  if (opts.from) c.push(gte(analyticsEvents.createdAt, opts.from));
+  // Exclusive, so a caller can pass midnight of the next day and get exactly
+  // one day without the last second belonging to two ranges.
+  if (opts.to) c.push(lt(analyticsEvents.createdAt, opts.to));
+  return c;
+}
 import type {
   Camera,
   InsertCamera,
@@ -35,6 +69,7 @@ import type {
 } from "@shared/schema";
 import { encryptSecret, decryptSecret, isEncrypted, encryptionAvailable } from "./crypto";
 import "dotenv/config";
+import { quotaWrite } from "./quotaWrite";
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -127,8 +162,8 @@ export const storage = {
   },
 
   async createUser(user: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(user).returning();
-    return result[0];
+    const insert = async (executor: any) => (await executor.insert(users).values(user).returning())[0] as User;
+    return user.organizationId ? quotaWrite(user.organizationId, "maxUsers", insert) : insert(db);
   },
 
   async updateUserPasswordHash(id: string, passwordHash: string): Promise<void> {
@@ -283,16 +318,15 @@ export const storage = {
   },
 
   async createCamera(camera: InsertCamera, organizationId: string): Promise<Camera> {
-    const result = await db
-      .insert(cameras)
-      .values({ ...encryptCameraSecrets(camera), organizationId })
-      .returning();
-    return decryptCamera(result[0]);
+    return quotaWrite(organizationId, "maxCameras", async (tx) => {
+      const [row] = await tx.insert(cameras).values({ ...encryptCameraSecrets(camera), organizationId }).returning();
+      return decryptCamera(row);
+    });
   },
 
   async countCamerasByOrg(organizationId: string): Promise<number> {
-    const rows = await db.select({ id: cameras.id }).from(cameras).where(eq(cameras.organizationId, organizationId));
-    return rows.length;
+    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(cameras).where(eq(cameras.organizationId, organizationId));
+    return row.n;
   },
 
   async updateCamera(id: string, updates: Partial<InsertCamera>): Promise<Camera | undefined> {
@@ -416,19 +450,42 @@ export const storage = {
     return result[0];
   },
 
+  /**
+   * Events for one organisation, filtered.
+   *
+   * The list used to be "the newest 200, and nothing else". A week after
+   * go-live a client cannot answer "what happened at Gate 2 on Tuesday", which
+   * is the question a security system exists to answer, so date, camera, type
+   * and acknowledgement are all filterable and the result can be paged.
+   */
   async getAnalyticsEventsByOrg(
     organizationId: string,
-    opts: { module?: string; cameraId?: string; limit?: number } = {}
+    opts: AnalyticsEventQuery = {}
   ): Promise<AnalyticsEvent[]> {
-    const conditions = [eq(analyticsEvents.organizationId, organizationId)];
-    if (opts.module) conditions.push(eq(analyticsEvents.module, opts.module));
-    if (opts.cameraId) conditions.push(eq(analyticsEvents.cameraId, opts.cameraId));
     return await db
       .select()
       .from(analyticsEvents)
-      .where(and(...conditions))
+      .where(and(...analyticsEventConditions(organizationId, opts)))
       .orderBy(desc(analyticsEvents.createdAt))
-      .limit(opts.limit ?? 100);
+      .limit(Math.min(opts.limit ?? 100, 5000))
+      .offset(opts.offset ?? 0);
+  },
+
+  /**
+   * How many events match, ignoring limit/offset.
+   *
+   * Without it the UI cannot say "showing 50 of 1,284" — and a list that always
+   * looks complete hides the fact that a filter is needed at all.
+   */
+  async countAnalyticsEventsByOrg(
+    organizationId: string,
+    opts: AnalyticsEventQuery = {}
+  ): Promise<number> {
+    const rows = await db
+      .select({ n: sqlCount() })
+      .from(analyticsEvents)
+      .where(and(...analyticsEventConditions(organizationId, opts)));
+    return Number(rows[0]?.n ?? 0);
   },
 
   async acknowledgeAnalyticsEvent(id: string, organizationId: string): Promise<void> {

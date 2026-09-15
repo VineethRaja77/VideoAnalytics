@@ -30,6 +30,12 @@ export type VmsEventType =
   | "analytics_worker_failing"
   | "storage_warning"
   | "storage_critical"
+  // A client approaching or past the storage they were SOLD, which is a
+  // different problem from the host's disk filling up: one is a commercial
+  // conversation, the other is an outage.
+  | "quota_critical"
+  | "quota_warning"
+  | "quota_exceeded"
   | "sensor_warning"
   | "sensor_critical"
   | "sensor_recovered";
@@ -60,6 +66,9 @@ const SEVERITY: Record<VmsEventType, VmsEvent["severity"]> = {
   analytics_worker_started: "info",
   analytics_worker_unlicensed: "warning",
   analytics_worker_failing: "critical",
+  quota_warning: "warning",
+  quota_critical: "critical",
+  quota_exceeded: "critical",
   storage_warning: "warning",
   storage_critical: "critical",
   sensor_warning: "warning",

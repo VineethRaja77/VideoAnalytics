@@ -83,15 +83,18 @@ a single POST of the SDP offer.
 
 ## Session identity is per browser profile, not per tab
 
-Session cookies are scoped to the **browser profile**. A second login in another
-tab silently rebinds every open tab to the new user — which, in a multi-tenant
-product, means one client's operator could be looking at another client's
-cameras without any visible change.
+Session cookies are scoped to the **browser profile**. Admin and client portal
+sessions are intentionally split into `vms.admin.sid` and `vms.client.sid`,
+selected by the `X-VMS-Portal` request header. That lets a Super Admin tab and a
+client-admin tab coexist in the same browser. Within one portal, a second login
+still rebinds that portal's cookie jar, so stale-tab detection remains needed.
 
 [`auth.tsx`](src/lib/auth.tsx) therefore exposes `isSameSession(a, b)`, and
 `AuthUser` carries `sessionStartedAt` (epoch ms of the login backing this
 session, changing on every fresh login). Polling `/api/auth/me` and comparing
-detects the rebind and forces the tab back to the login screen.
+detects a same-portal rebind and forces the stale tab back to the login screen.
+The login response itself returns the full `AuthUser` payload, so a successful
+login does not need an extra `/api/auth/me` roundtrip before rendering.
 
 `AuthUser.licensedModules` is `string[]` or `"*"` (super admin). The UI uses it
 to hide unlicensed surfaces — but hiding is cosmetic; the authoritative gate is
@@ -104,16 +107,17 @@ to hide unlicensed surfaces — but hiding is cosmetic; the authoritative gate i
 | Component | Purpose |
 |---|---|
 | [`LoginPage`](src/components/LoginPage.tsx) | credentials → `POST /api/auth/login` |
-| [`AppSidebar`](src/components/AppSidebar.tsx) / [`TopHeader`](src/components/TopHeader.tsx) | 240px sidebar + 64px header; search, notification bell, profile |
+| [`AppSidebar`](src/components/AppSidebar.tsx) / [`TopHeader`](src/components/TopHeader.tsx) | organization-branded sidebar + header; search, notification bell, profile |
+| [`OperationsDashboard`](src/components/OperationsDashboard.tsx) | default client landing page: camera counts, open events, licensed feature count and quick actions |
 | [`LiveView`](src/components/LiveView.tsx) + [`CameraCard`](src/components/CameraCard.tsx) | responsive grid of live tiles, each its own WHEP player |
 | [`LivePlayerModal`](src/components/LivePlayerModal.tsx) | single-camera expanded view |
 | [`cameralist`](src/components/cameralist.tsx) | table view: status, codec, recording state, analytics bindings |
 | [`AddCameraForm`](src/components/AddCameraForm.tsx) | RTSP/ONVIF details; `POST /api/cameras/test-connection` probes the stream and reports the detected codec before saving |
 | [`PlaybackView`](src/components/PlaybackView.tsx) | recorded segments; requests the `?codec=h264` variant when the browser cannot decode HEVC in a file |
-| [`AlertsView`](src/components/AlertsView.tsx) | cross-module analytics events + acknowledge |
-| [`ModuleEventsView`](src/components/ModuleEventsView.tsx) | generic per-module event table; [`VehicleEventsView`](src/components/VehicleEventsView.tsx) and [`FaceEventsView`](src/components/FaceEventsView.tsx) specialise it |
+| [`EventsCenter`](src/components/EventsCenter.tsx) | one client-facing analytics event center; module tabs appear only for licensed feature groups |
+| [`ModuleEventsView`](src/components/ModuleEventsView.tsx) | generic per-module event table; PPE, person, vehicle and face views specialise it |
 | [`OrgUsers`](src/components/OrgUsers.tsx) | client-admin user management within one org |
-| [`SuperAdminConsole`](src/components/SuperAdminConsole.tsx) | platform admin: organisations, users, products, licences, `.lic` download, model checksum status |
+| [`SuperAdminConsole`](src/components/SuperAdminConsole.tsx) | platform admin: Overview, Organizations, Licensing, Models, System, Audit, Settings |
 | [`AuditLogView`](src/components/AuditLogView.tsx) | the append-only trail, filtered |
 
 ---
@@ -127,7 +131,10 @@ text as the message, so component `onError` handlers can show something real.
 read) and throwing.
 
 Cameras are polled at 10s in `App.tsx`; live *video* liveness is the peer
-connection's own business, not the query's.
+connection's own business, not the query's. Route chunks are loaded on demand:
+a previous eager prefetch of every client page after login created a burst of
+background downloads and made slower browsers feel stuck. Hashed production
+assets are served immutable by `server/serve.ts`.
 
 ---
 
@@ -136,8 +143,9 @@ connection's own business, not the query's.
 Tailwind 3 + shadcn/ui on Radix primitives, configured by
 [`components.json`](../components.json) and [`tailwind.config.ts`](../tailwind.config.ts).
 Palette and typography rules live in
-[design_guidelines.md](../design_guidelines.md) — dark navy `#0F172A`, surfaces
-`#1E293B`, Hyperspark blue `#0B63FF`, status-driven green/red/amber, Inter.
+[design_guidelines.md](../design_guidelines.md). Current product screens use a
+light, work-focused shell for both Super Admin and client portals, with
+status-driven green/red/amber and Inter.
 
 Files under `src/components/ui/` are generated shadcn primitives. Prefer
 composing them; if one must change, change it deliberately and note it, because

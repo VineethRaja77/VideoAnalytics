@@ -11,6 +11,8 @@ declare module "express-session" {
     userId?: string;
     /** Epoch ms of the ORIGINAL login. Never refreshed — enforces the absolute cap. */
     loginAt?: number;
+    /** Did the user ask to stay signed in after closing the browser? */
+    persistent?: boolean;
   }
 }
 
@@ -45,8 +47,7 @@ if (!SESSION_SECRET) {
 
 export function setupSession(app: Express): void {
   const PgSession = connectPgSimple(session);
-
-  app.use(
+  const makeSession = (name: string) =>
     session({
       store: new PgSession({ pool, createTableIfMissing: true, tableName: "session" }),
       secret: SESSION_SECRET as string,
@@ -55,16 +56,30 @@ export function setupSession(app: Express): void {
       // Re-send the cookie on every response so the idle window restarts. Without
       // this the cookie expires a fixed 30 days after LOGIN and an active user is
       // still thrown out mid-shift.
+      //
+      // The maxAge here applies when a session is CREATED. Rolling then
+      // refreshes the expiry from THAT SESSION's own cookie settings, not from
+      // this config, so a login that set maxAge to null (see establishSession)
+      // stays a browser-session cookie for its whole life. Verified by the
+      // "does NOT quietly upgrade" test in session.test.ts.
       rolling: true,
-      name: "vms.sid",
+      name,
       cookie: {
-        httpOnly: true,          // JS cannot read it → XSS cannot steal the session
+        httpOnly: true,          // JS cannot read it, so XSS cannot steal the session
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",         // blocks cross-site CSRF while allowing normal navigation
         maxAge: IDLE_TIMEOUT_MS,
       },
-    })
-  );
+    });
+
+  const adminSession = makeSession("vms.admin.sid");
+  const clientSession = makeSession("vms.client.sid");
+
+  app.use((req, res, next) => {
+    const portal = String(req.get("x-vms-portal") || "").toLowerCase();
+    const wantsAdminSession = portal === "admin" || req.path.startsWith("/api/admin");
+    return (wantsAdminSession ? adminSession : clientSession)(req, res, next);
+  });
 }
 
 /**
@@ -143,12 +158,32 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
  * user's authenticated session. Regenerating issues a fresh, unguessable id at
  * the moment privilege is granted, so the planted one is worthless.
  */
-export function establishSession(req: Request, userId: string): Promise<void> {
+/**
+ * @param remember  Keep this person signed in after the browser closes.
+ *
+ * "Remember Me" was a checkbox that changed nothing: every login got the full
+ * 30-day cookie whether it was ticked or not. On a shared control-room PC that
+ * is the wrong default — an operator who deliberately left it unticked was
+ * still signed in for a month on a machine anyone can walk up to.
+ *
+ * Unticked now means a BROWSER-SESSION cookie: it is gone when the browser
+ * closes. Ticked keeps the 30-day idle window. The absolute cap below applies
+ * either way, and is enforced server-side because the client owns the cookie.
+ */
+export function establishSession(
+  req: Request,
+  userId: string,
+  remember = true
+): Promise<void> {
   return new Promise((resolve, reject) => {
     req.session.regenerate((err) => {
       if (err) return reject(err);
       req.session.userId = userId;
       req.session.loginAt = Date.now();
+      req.session.persistent = remember;
+      // `null` (not 0, not undefined) is what express-session reads as
+      // "session cookie" — omitted Expires/Max-Age, discarded on browser close.
+      req.session.cookie.maxAge = remember ? IDLE_TIMEOUT_MS : (null as any);
       // Persist before responding: the client may fire its first authenticated
       // request immediately, and with an async store that can otherwise race.
       req.session.save((saveErr) => (saveErr ? reject(saveErr) : resolve()));

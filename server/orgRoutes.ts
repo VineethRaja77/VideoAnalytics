@@ -1,3 +1,4 @@
+import { QuotaError } from "./quotaWrite";
 // server/orgRoutes.ts
 //
 // Org-scoped administration for a client_admin: manage the managers and
@@ -11,6 +12,7 @@ import { storage } from "./storage";
 import { hashPassword, validatePasswordStrength } from "./auth";
 import { audit } from "./audit";
 import { requireRole } from "./rbac";
+import { canAdd } from "./limits";
 
 const createOrgUserSchema = z.object({
   username: z.string().min(1),
@@ -43,6 +45,11 @@ export function registerOrgRoutes(app: Express): void {
       const weak = validatePasswordStrength(body.password, body.username);
       if (weak) return res.status(400).json({ error: weak });
 
+      // maxUsers was written into every licence and read by nothing, so a
+      // client sold "25 users" could create any number.
+      const allowed = await canAdd(orgId, "maxUsers");
+      if (!allowed.ok) return res.status(403).json({ error: allowed.message });
+
       const user = await storage.createUser({
         username: body.username,
         email: body.email,
@@ -66,6 +73,7 @@ export function registerOrgRoutes(app: Express): void {
       res.status(201).json(safe);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json({ error: "Invalid data", details: err.errors });
+      if (err instanceof QuotaError) return res.status(403).json({ error: err.message });
       console.error("❌ POST /api/org/users failed:", err);
       res.status(500).json({ error: "Failed to create user" });
     }

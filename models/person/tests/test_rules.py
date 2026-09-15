@@ -265,3 +265,93 @@ class TestRuleRegistry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class MalformedGeometryDoesNotCrashTheWorker(unittest.TestCase):
+    """A bad zone string must disable ONE rule, not the whole camera.
+
+    parse_polygon raises ValueError on a spec that cannot be read. Before this
+    was caught, that exception escaped build_rules, killed the worker, and the
+    supervisor restart-looped it forever against a config that could never
+    parse — taking down the other six analytics on that camera with it.
+    """
+
+    def _cfg(self, **over):
+        cfg = Cfg()
+        for k, v in over.items():
+            setattr(cfg, k, v)
+        return cfg
+
+    def test_odd_number_of_coordinates_disables_only_intrusion(self):
+        rules = build_rules(
+            ["intrusion", "people_count", "fall"],
+            self._cfg(INTRUSION_ZONE="100,100,300"),
+        )
+        started = {r.feature for r in rules}
+        self.assertNotIn("intrusion", started)
+        self.assertEqual(started, {"people_count", "fall"})
+
+    def test_non_numeric_coordinates_do_not_raise(self):
+        rules = build_rules(["intrusion"], self._cfg(INTRUSION_ZONE="a,b,c,d,e,f"))
+        self.assertEqual(rules, [])
+
+    def test_a_valid_zone_still_starts(self):
+        rules = build_rules(
+            ["intrusion"], self._cfg(INTRUSION_ZONE="0,0,10,0,10,10,0,10")
+        )
+        self.assertEqual([r.feature for r in rules], ["intrusion"])
+
+
+class SeveralRestrictedAreasOnOneCamera(unittest.TestCase):
+    """A yard camera covers a fuel store AND a transformer bay.
+
+    Forcing them into one polygon means either covering the walkway between them
+    — false alerts all day, which is how a client ends up switching the feature
+    off — or leaving one of them unwatched.
+    """
+
+    #: Two 100px squares with a wide gap between them.
+    TWO_AREAS = "0,0,100,0,100,100,0,100;300,0,400,0,400,100,300,100"
+
+    def _cfg(self, **over):
+        cfg = Cfg()
+        cfg.INTRUSION_ZONE = self.TWO_AREAS
+        for k, v in over.items():
+            setattr(cfg, k, v)
+        return cfg
+
+    def _rule(self):
+        return build_rules(["intrusion"], self._cfg())[0]
+
+    def _walk(self, rule, x, y, frames=6):
+        """Hold a track at one spot long enough to clear MIN_FRAMES."""
+        out = []
+        for f in range(frames):
+            out += rule.update([T(1, [x - 5, y - 40, x + 5, y])], f, 1000.0 + f)
+        return out
+
+    def test_both_areas_are_watched(self):
+        self.assertTrue(self._walk(self._rule(), 50, 50), "first area missed")
+        self.assertTrue(self._walk(self._rule(), 350, 50), "second area missed")
+
+    def test_the_gap_between_them_is_not_an_intrusion(self):
+        # The whole point. A walkway between two restricted areas must stay
+        # walkable.
+        self.assertEqual(self._walk(self._rule(), 200, 50), [])
+
+    def test_outside_everything_is_not_an_intrusion(self):
+        self.assertEqual(self._walk(self._rule(), 600, 600), [])
+
+    def test_a_single_area_still_works_unchanged(self):
+        cfg = Cfg()
+        cfg.INTRUSION_ZONE = "0,0,100,0,100,100,0,100"
+        rule = build_rules(["intrusion"], cfg)[0]
+        self.assertTrue(self._walk(rule, 50, 50))
+        self.assertEqual(self._walk(rule, 600, 600), [])
+
+    def test_a_malformed_second_area_disables_the_rule_rather_than_half_of_it(self):
+        # Running with only the areas that happened to parse would leave part of
+        # the site silently unwatched, which is worse than refusing to start.
+        cfg = Cfg()
+        cfg.INTRUSION_ZONE = "0,0,100,0,100,100,0,100;300,0,400"
+        self.assertEqual(build_rules(["intrusion"], cfg), [])

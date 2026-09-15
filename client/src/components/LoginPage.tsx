@@ -14,6 +14,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,17 +79,37 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 data-testid="checkbox-remember"
               />
               <Label htmlFor="remember" className="text-sm text-muted-foreground cursor-pointer">
-                Remember Me
+                Keep me signed in
               </Label>
             </div>
+            {/* This used to be a link that did nothing at all — clicked on the
+                first screen every client sees, with no dialog, no message and
+                no request. There is no self-service email reset in this
+                product, so rather than fake one, it says what actually works:
+                an organisation admin can reset any of their staff's passwords
+                from Team Members. */}
             <button
               type="button"
-              className="text-sm text-primary hover:underline"
+              className="cursor-pointer text-sm text-primary hover:underline"
+              aria-expanded={showHelp}
+              onClick={() => setShowHelp((v) => !v)}
               data-testid="link-forgot-password"
             >
               Forgot Password?
             </button>
           </div>
+
+          {showHelp && (
+            <div
+              role="status"
+              className="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground"
+              data-testid="forgot-password-help"
+            >
+              Your organisation's administrator can set a new password for you
+              from <strong>Team Members</strong> — ask them directly. If you are
+              the administrator, contact your Hyperspark provider.
+            </div>
+          )}
 
           <Button
             type="submit"

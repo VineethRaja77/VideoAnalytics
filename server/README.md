@@ -48,6 +48,15 @@ schema. Tests could not catch it because they build their own schema. So the
 check is explicit, runs before anything touches the DB, and names the exact
 missing object and the migration that creates it.
 
+
+### Static assets — [`serve.ts`](serve.ts)
+
+Production serves `dist/public` through Express. `index.html` is `no-cache` so a
+new deployment is discovered immediately. Hashed assets under `/assets/` are
+`Cache-Control: public, max-age=31536000, immutable`; the filenames contain the
+content hash, so returning users should not redownload the main bundle or route
+chunks on every visit.
+
 ---
 
 ## The media plane
@@ -179,7 +188,7 @@ never sees a session cookie. Snapshots are served separately and org-scoped by
 
 | File | Responsibility |
 |---|---|
-| [`auth.ts`](auth.ts) | express-session on Postgres; **rolling idle timeout** plus an **absolute cap**. The absolute cap is the one that matters: without it a cookie copied off a device stays valid forever as long as something keeps using it |
+| [`auth.ts`](auth.ts) | express-session on Postgres; split portal cookies (`vms.admin.sid` / `vms.client.sid`), **rolling idle timeout** plus an **absolute cap**. The absolute cap is the one that matters: without it a cookie copied off a device stays valid forever as long as something keeps using it |
 | [`rbac.ts`](rbac.ts) | four roles; `resolveOrgScope` is the **single choke point** for tenant isolation — every org-scoped handler derives its org from it, never from the client |
 | [`security.ts`](security.ts) | helmet headers, 10-attempts-per-IP-per-15-min login limiter, `requireSameOrigin` CSRF. Two deliberate carve-outs: **CSP off** and **COEP/CORP off**, because a wrong policy silently breaks live video on a single-origin app with no user-supplied HTML |
 | [`crypto.ts`](crypto.ts) | AES-256-GCM envelope encryption for camera RTSP passwords, format `v1:<iv>:<tag>:<ct>`. Reversible by necessity — the recorder must replay the password to the camera. The key is **not** derived from `SESSION_SECRET`, or rotating a session secret would make every camera password undecryptable |
@@ -187,6 +196,13 @@ never sees a session cookie. Snapshots are served separately and org-scoped by
 
 `resolveOrgScope` fails **closed**. So does the sensor layer, and so does PPE
 visibility. That is the house style: absence of evidence is never evidence.
+
+`POST /api/auth/login` returns the same `AuthUser` shape as `/api/auth/me` so
+the browser can render the shell without a second identity request. Super Admin
+logins that begin from the plain root page are moved into the admin session
+cookie before the admin console mounts; otherwise the shell would render while
+`/api/admin/*` read the wrong cookie and returned 401.
+
 
 ---
 

@@ -8,9 +8,13 @@ export interface AuthUser {
   email: string | null;
   role: Role;
   organizationId: string | null;
+  organizationName?: string | null;
+  organizationLogoDataUrl?: string | null;
   licensedModules: string[] | "*";
   /** Epoch ms of the login backing this session; changes on every fresh login. */
   sessionStartedAt?: number | null;
+  /** IANA zone of the site the cameras are at, e.g. "Asia/Kolkata". */
+  timezone?: string | null;
 }
 
 /**
@@ -45,4 +49,16 @@ export function canManageOrgUsers(role: Role): boolean {
 }
 export function hasModule(user: AuthUser, key: string): boolean {
   return user.licensedModules === "*" || user.licensedModules.includes(key);
+}
+
+/**
+ * Does the user hold ANY of these features?
+ *
+ * A licence is per FEATURE, but a screen serves a MODULE. Gating the Vehicles
+ * screen on `vehicle_count` alone hid it from a client who had bought only
+ * wrong-way driving — they were paying for a feature with no way to see its
+ * events. Screens must therefore gate on the whole feature set they display.
+ */
+export function hasAnyModule(user: AuthUser, keys: readonly string[]): boolean {
+  return keys.some((k) => hasModule(user, k));
 }

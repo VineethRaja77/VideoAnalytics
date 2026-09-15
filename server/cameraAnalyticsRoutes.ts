@@ -20,6 +20,8 @@ import { requireAuth } from "./auth";
 import { requireWriteAccess, resolveOrgScope } from "./rbac";
 import { evaluateLicense } from "./entitlements";
 import { ANALYTICS_FEATURES, FEATURE_MODULE } from "@shared/schema";
+import { validateAnalyticsConfig } from "@shared/analyticsConfig";
+import { audit } from "./audit";
 import type { CameraAnalytics } from "@shared/schema";
 import {
   startAnalyticsWorker,
@@ -100,6 +102,18 @@ export function registerCameraAnalyticsRoutes(app: Express): void {
         });
       }
 
+      // Zones and lines are parsed by the Python worker. A malformed one used
+      // to raise there, kill the worker, and leave the supervisor restarting it
+      // forever against a config that can never parse — so it is rejected here,
+      // where the operator can still see why.
+      const problems = validateAnalyticsConfig(
+        body.config as Record<string, unknown>,
+        body.feature
+      );
+      if (problems.length) {
+        return res.status(400).json({ error: problems[0], details: problems });
+      }
+
       const row = await storage.upsertCameraAnalytics({
         organizationId: camera.organizationId,
         cameraId: camera.id,
@@ -110,6 +124,16 @@ export function registerCameraAnalyticsRoutes(app: Express): void {
 
       if (row.enabled) await startAnalyticsWorker(row.id);
       else await stopAnalyticsWorker(row.id);
+
+      // What a camera watches for is a security decision, so it is recorded.
+      void audit(req, {
+        action: "analytics_binding_changed",
+        organizationId: camera.organizationId,
+        targetType: "camera_analytics",
+        targetId: row.id,
+        targetLabel: `${camera.name} / ${body.feature}`,
+        detail: { feature: body.feature, enabled: row.enabled, created: true },
+      });
 
       res.status(201).json({ ...row, runtime: getAnalyticsWorkerStatusFor(row.cameraId, row.module, row.feature) });
     } catch (err) {
@@ -154,6 +178,14 @@ export function registerCameraAnalyticsRoutes(app: Express): void {
       const patch = patchSchema.parse(req.body);
       const row = found.row;
 
+      const problems = validateAnalyticsConfig(
+        patch.config as Record<string, unknown>,
+        row.feature
+      );
+      if (problems.length) {
+        return res.status(400).json({ error: problems[0], details: problems });
+      }
+
       const next = await storage.upsertCameraAnalytics({
         organizationId: row.organizationId,
         cameraId: row.cameraId,
@@ -166,6 +198,25 @@ export function registerCameraAnalyticsRoutes(app: Express): void {
       // so a running worker must be restarted for them to take effect.
       if (!next.enabled) await stopAnalyticsWorker(next.id);
       else await restartAnalyticsWorker(next.id);
+
+      // Moving a zone changes what the site treats as a violation, so it is
+      // recorded separately from merely enabling or disabling the feature.
+      void audit(req, {
+        action: patch.config !== undefined
+          ? "analytics_zone_changed"
+          : "analytics_binding_changed",
+        organizationId: next.organizationId,
+        targetType: "camera_analytics",
+        targetId: next.id,
+        targetLabel: next.feature,
+        detail: {
+          feature: next.feature,
+          enabled: next.enabled,
+          // The geometry itself, so "who moved the zone, and to where" is
+          // answerable months later. It is site layout, not personal data.
+          config: patch.config ?? undefined,
+        },
+      });
 
       res.json({ ...next, runtime: getAnalyticsWorkerStatusFor(next.cameraId, next.module, next.feature) });
     } catch (err) {
@@ -191,6 +242,14 @@ export function registerCameraAnalyticsRoutes(app: Express): void {
     if (!found.ok) return res.status(found.status).json({ error: found.error });
     await stopAnalyticsWorker(found.row.id);
     await storage.deleteCameraAnalytics(found.row.id);
+    void audit(req, {
+      action: "analytics_binding_changed",
+      organizationId: found.row.organizationId,
+      targetType: "camera_analytics",
+      targetId: found.row.id,
+      targetLabel: found.row.feature,
+      detail: { feature: found.row.feature, removed: true },
+    });
     res.json({ success: true });
   });
 }

@@ -39,7 +39,7 @@ def emit_identity(camera_id: str, detail: dict) -> None:
         "eventId": str(uuid.uuid4()),
         "cameraId": camera_id,
         "trackId": detail.get("trackId"),
-        "at": datetime.datetime.utcnow().isoformat() + "Z",
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "details": detail,
         "snapshot": detail.get("snapshot"),
     }, "UNKNOWN" if is_unknown else "FACE")

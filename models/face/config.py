@@ -45,7 +45,25 @@ EMBEDDER_PATH = _s("EMBEDDER_PATH",
                    os.path.join(HERE, "weights", "auraface_glintr100.onnx"))
 
 # ---- Gallery ----
-GALLERY_PATH = _s("GALLERY_PATH", os.path.join(HERE, "gallery", "gallery.npz"))
+# ONE GALLERY PER ORGANISATION — never a shared file.
+#
+# The supervisor passes GALLERY_PATH explicitly as
+#     models/face/gallery/<organizationId>.npz
+# because a single shared gallery is a tenant breach AND a biometric data
+# breach: Client B's cameras would match faces against Client A's enrolled
+# staff, and B would learn A's employee names from the event feed.
+#
+# The default below is a DEVELOPMENT path only. In production the supervisor
+# always overrides it, and the worker refuses to start on the default (see the
+# check in worker.py) so a misconfigured deployment fails loudly instead of
+# silently pooling every client's biometrics into one file.
+DEFAULT_DEV_GALLERY = os.path.join(HERE, "gallery", "_dev_only.npz")
+GALLERY_PATH = _s("GALLERY_PATH", DEFAULT_DEV_GALLERY)
+
+# How often the running worker re-checks the gallery file for enrolments made
+# from the web console. Small enough that a newly enrolled person is recognised
+# within seconds; it costs one stat() per interval, not a re-read.
+GALLERY_RELOAD_SECONDS = _f("GALLERY_RELOAD_SECONDS", 10)
 
 # ---- Recognition thresholds ----
 # Cosine similarity above which a match is accepted. ~0.4 is the usual ArcFace
@@ -92,9 +110,37 @@ SAVE_SNAPSHOTS = _b("SAVE_SNAPSHOTS", True)
 SNAPSHOT_DIR = _s("SNAPSHOT_DIR", os.path.join(HERE, "snapshots"))
 ALERT_COOLDOWN_S = _f("ALERT_COOLDOWN_S", 60)
 
+# Two unknown faces this similar within the cooldown are treated as the SAME
+# stranger, so they produce one alert instead of one per track.
+#
+# Higher than MATCH_THRESHOLD on purpose. That threshold decides "is this the
+# enrolled Ramesh", where a miss merely means a staff member is reported
+# unknown. This one decides "have I already told the operator about this
+# person", where a false merge HIDES a second stranger — the more costly error —
+# so it demands a clearly stronger match. Measured on real photographs: two
+# pictures of the same person score 0.74-0.93, two different people 0.09-0.12,
+# so 0.5 sits in empty space between them.
+UNKNOWN_SAME_PERSON_SIM = _f("UNKNOWN_SAME_PERSON_SIM", 0.50)
+
+# Below this similarity between consecutive observations of ONE track, the
+# track is judged to have been taken over by a different person and everything
+# remembered about it is discarded.
+#
+# Deliberately generous. Consecutive frames of the same face score well above
+# 0.9 even through moderate pose and lighting change, while two different
+# people score around 0.05, so anything in the middle is safe. Erring low costs
+# nothing — a missed hijack is the status quo — while erring high would reset
+# a legitimate track every time somebody turned their head.
+TRACK_IDENTITY_SIM = _f("TRACK_IDENTITY_SIM", 0.45)
+
 # Emit an event when an UNKNOWN person is confirmed (useful for intrusion), not
 # just for recognised staff.
 ALERT_ON_UNKNOWN = _b("ALERT_ON_UNKNOWN", True)
+
+# When face recognition may raise alerts, as JSON from the platform:
+#   {"face_recognition": {"days":[0,...,6], "from":"18:00", "to":"06:00"}}
+# Absent means no time limit. See pipeline/schedule.py.
+FEATURE_SCHEDULES = _s("FEATURE_SCHEDULES", "")
 
 # ---- Privacy / DPDP ----
 # Facial data is biometric = sensitive personal data under India's DPDP Act 2023:

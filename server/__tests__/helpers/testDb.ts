@@ -45,7 +45,13 @@ export function testPool(schema: string = TEST_SCHEMA): InstanceType<typeof Pool
   return pool;
 }
 
-/** Create the tables the app needs, inside the test schema only. */
+/** Create the tables the app needs, inside the test schema only.
+ *
+ *  Time columns are `timestamptz`, matching production (migration 0009). When
+ *  this harness used naive `timestamp` while the real schema used instants, the
+ *  suite quietly tested a different database from the one that ships — and the
+ *  sensor staleness tests failed for a reason that had nothing to do with
+ *  sensors. */
 export async function resetSchema(
   pool: InstanceType<typeof Pool>,
   schema: string = TEST_SCHEMA
@@ -61,7 +67,14 @@ export async function resetSchema(
       slug text NOT NULL UNIQUE,
       status text NOT NULL DEFAULT 'active',
       ingest_key_hash text UNIQUE,
-      created_at timestamp NOT NULL DEFAULT now()
+      logo_data_url text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE platform_settings (
+      key text PRIMARY KEY,
+      value text,
+      updated_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE users (
@@ -72,7 +85,7 @@ export async function resetSchema(
       organization_id varchar REFERENCES organizations(id),
       role text NOT NULL DEFAULT 'client_admin',
       status text NOT NULL DEFAULT 'active',
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE products (
@@ -81,7 +94,7 @@ export async function resetSchema(
       name text NOT NULL,
       description text,
       active boolean NOT NULL DEFAULT true,
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE licenses (
@@ -90,12 +103,12 @@ export async function resetSchema(
       product_id varchar NOT NULL REFERENCES products(id),
       plan text NOT NULL DEFAULT 'trial',
       status text NOT NULL DEFAULT 'active',
-      issued_at timestamp NOT NULL DEFAULT now(),
-      expires_at timestamp,
+      issued_at timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz,
       limits jsonb,
       machine_fingerprint text,
       signed_license text,
-      last_validated_at timestamp,
+      last_validated_at timestamptz,
       CONSTRAINT licenses_org_product_unique UNIQUE (organization_id, product_id)
     );
 
@@ -107,7 +120,7 @@ export async function resetSchema(
       kind text NOT NULL DEFAULT 'zone',
       path text NOT NULL DEFAULT '/',
       depth integer NOT NULL DEFAULT 0,
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE cameras (
@@ -123,11 +136,11 @@ export async function resetSchema(
       location_id varchar REFERENCES locations(id),
       recording_policy text NOT NULL DEFAULT 'continuous',
       status text NOT NULL DEFAULT 'inactive',
-      created_at timestamp NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now(),
       mediamtx_path text,
       recording_enabled boolean NOT NULL DEFAULT true,
       recording_pid integer, recording_folder text,
-      last_started_at timestamp, last_health_check_at timestamp
+      last_started_at timestamptz, last_health_check_at timestamptz
     );
 
     CREATE TABLE camera_analytics (
@@ -142,9 +155,9 @@ export async function resetSchema(
       pid integer,
       restart_count integer NOT NULL DEFAULT 0,
       last_error text,
-      last_started_at timestamp,
-      last_heartbeat_at timestamp,
-      created_at timestamp NOT NULL DEFAULT now(),
+      last_started_at timestamptz,
+      last_heartbeat_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
       CONSTRAINT camera_analytics_camera_feature_unique UNIQUE (camera_id, feature)
     );
 
@@ -158,15 +171,15 @@ export async function resetSchema(
       details jsonb,
       snapshot text,
       acknowledged boolean NOT NULL DEFAULT false,
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE recordings (
       id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id varchar REFERENCES organizations(id),
       camera_id varchar NOT NULL REFERENCES cameras(id),
-      start_time timestamp NOT NULL,
-      end_time timestamp,
+      start_time timestamptz NOT NULL,
+      end_time timestamptz,
       file_path text NOT NULL,
       duration integer,
       file_size bigint
@@ -184,9 +197,9 @@ export async function resetSchema(
       enabled boolean NOT NULL DEFAULT true,
       heartbeat_seconds integer NOT NULL DEFAULT 300,
       calibration_interval_days integer,
-      calibrated_at timestamp,
+      calibrated_at timestamptz,
       config jsonb,
-      created_at timestamp NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now(),
       CONSTRAINT devices_org_external_unique UNIQUE (organization_id, external_id)
     );
 
@@ -198,7 +211,7 @@ export async function resetSchema(
       value double precision NOT NULL,
       unit text,
       quality text NOT NULL DEFAULT 'good',
-      at timestamp NOT NULL DEFAULT now()
+      at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE sensor_rules (
@@ -214,7 +227,7 @@ export async function resetSchema(
       severity text NOT NULL DEFAULT 'warning',
       message text,
       enabled boolean NOT NULL DEFAULT true,
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE audit_log (
@@ -231,13 +244,13 @@ export async function resetSchema(
       detail jsonb,
       ip_address text,
       user_agent text,
-      created_at timestamp NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE session (
       sid varchar PRIMARY KEY,
       sess json NOT NULL,
-      expire timestamp(6) NOT NULL
+      expire timestamptz(6) NOT NULL
     );
   `);
 }

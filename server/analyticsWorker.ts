@@ -23,6 +23,7 @@ import path from "path";
 import { storage } from "./storage";
 import { emitEvent } from "./events";
 import { evaluateLicense } from "./entitlements";
+import { RESERVED_CONFIG_KEYS, SCHEDULE_KEY } from "@shared/analyticsConfig";
 import { mediamtxPathForCamera } from "./mediamtxController";
 import { verifyModule } from "./modelRegistry";
 import type { Camera, CameraAnalytics } from "@shared/schema";
@@ -72,10 +73,33 @@ interface WorkerState {
   staggerTimer: NodeJS.Timeout | null;
   stopping: boolean;
   lastLicenceCheck: number;
+  /** Lines the worker wrote to stderr before it exited. A crash message is far
+   *  more useful to a client than "exit code 1", and it is the only place the
+   *  worker can explain itself. */
+  awaitingConfig: string[];
+  /** Set when the worker exited with EX_CONFIG. The watchdog must not respawn
+   *  it: configuration only reaches a worker through its environment at spawn,
+   *  so restarting it every tick would relaunch a Python process — loading the
+   *  detector each time — forever, for a camera nobody has finished setting up.
+   *  Cleared by stopWorkerGroup, which the config-saving PATCH goes through. */
+  configBlocked: boolean;
 }
 
 const workers = new Map<GroupKey, WorkerState>();
 let watchdogTimer: NodeJS.Timeout | null = null;
+
+/**
+ * sysexits.h EX_CONFIG.
+ *
+ * A worker exits with this when every feature it was asked to run is licensed
+ * and understood but still needs an operator to configure it — intrusion with
+ * no restricted area drawn, for instance. That is NOT a crash: restarting it
+ * cannot help, because configuration only reaches a worker through its
+ * environment at spawn. Treating it as a crash produced an endless restart loop
+ * and a stream of "analytics crashed" alerts to the client admin for what is
+ * really an unfinished setup step.
+ */
+const EXIT_AWAITING_CONFIG = 78;
 
 function moduleDir(module: string): string {
   return path.join(MODELS_BASE, module);
@@ -88,6 +112,32 @@ function venvPythonFor(module: string): string {
 function pythonFor(module: string): string {
   const venv = venvPythonFor(module);
   return fs.existsSync(venv) ? venv : "python3";
+}
+
+/**
+ * The gallery file for ONE organisation.
+ *
+ * Exported so the enrolment API and the worker supervisor cannot drift apart:
+ * if the console wrote to a different file from the one the worker reads,
+ * enrolment would appear to succeed and nobody would ever be recognised. One
+ * file per org is also the tenant boundary — a shared gallery would match one
+ * client's cameras against another client's staff, which is both a tenant
+ * breach and a biometric personal-data breach under the DPDP Act.
+ */
+export function galleryPathForOrg(organizationId: string): string {
+  return path.join(moduleDir("face"), "gallery", `${organizationId}.npz`);
+}
+
+/** The python that owns a module's environment. Exported for the face
+ *  enrolment bridge, which must run under the SAME interpreter as the worker
+ *  so it writes a gallery the worker's numpy can read. */
+export function modulePython(module: string): string {
+  return pythonFor(module);
+}
+
+/** A module's directory on disk. */
+export function moduleRoot(module: string): string {
+  return moduleDir(module);
 }
 
 export function moduleInstalled(module: string): boolean {
@@ -158,18 +208,46 @@ function workerEnv(
     PPE_INGEST_KEY: ingestToken,
     VEHICLE_INGEST_KEY: ingestToken,
     FACE_INGEST_KEY: ingestToken,
+    // ONE GALLERY PER ORGANISATION. A shared gallery file would match this
+    // tenant's cameras against another tenant's enrolled staff — a tenant
+    // breach and, because faces are biometric data under the DPDP Act, a
+    // personal-data breach. The worker refuses the shared default.
+    // A camera with no organisation cannot have a gallery, and must not be
+    // given one: GALLERY_PATH is then left unset, the face worker sees the
+    // development default and refuses to start rather than pooling biometrics.
+    // `undefined` (not omitted) so an inherited GALLERY_PATH in the platform's
+    // own environment cannot leak through the `...process.env` spread above.
+    GALLERY_PATH: camera.organizationId
+      ? galleryPathForOrg(camera.organizationId)
+      : undefined,
     ANALYTICS_INGEST_KEY: ingestToken,
   };
 
   // Per-feature config merged into the environment. Later features win on a key
   // collision, which is why config keys should be feature-specific
   // (COUNT_LINE, INTRUSION_ZONE, ...) rather than generic.
+  //
+  // RESERVED keys are exempt: a schedule is per FEATURE, but several features
+  // share one worker process and one environment, so merging them by name would
+  // silently give intrusion the schedule that was set for loitering. They travel
+  // in a keyed map instead.
+  const schedules: Record<string, unknown> = {};
   for (const r of rows) {
-    for (const [k, v] of Object.entries((r.config ?? {}) as Record<string, unknown>)) {
+    const cfg = (r.config ?? {}) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(cfg)) {
       if (v === null || v === undefined) continue;
+      if (RESERVED_CONFIG_KEYS.has(k)) continue;
       env[k.toUpperCase()] = String(v);
     }
+    const sched = cfg[SCHEDULE_KEY];
+    if (sched) {
+      schedules[r.feature] =
+        typeof sched === "string" ? JSON.parse(sched) : sched;
+    }
   }
+  // Absent or "{}" means every feature is always on, which is the behaviour a
+  // deployment with no schedules has always had.
+  env.FEATURE_SCHEDULES = JSON.stringify(schedules);
   return env;
 }
 
@@ -200,6 +278,8 @@ function spawnWorker(camera: Camera, state: WorkerState, rows: CameraAnalytics[]
 
   state.proc = proc;
   state.startedAt = Date.now();
+  state.awaitingConfig = [];
+  state.configBlocked = false;
   void setRuntime(state.featureIds, {
     status: "running",
     pid: proc.pid ?? null,
@@ -215,7 +295,16 @@ function spawnWorker(camera: Camera, state: WorkerState, rows: CameraAnalytics[]
   });
   proc.stderr?.on("data", (c) => {
     const line = c.toString().trim();
-    if (line) console.error(`${tag} ${line}`);
+    if (!line) return;
+    console.error(`${tag} ${line}`);
+    // The worker names each feature that is waiting and says what it needs.
+    // Kept so the client admin sees "intrusion needs a restricted zone" in the
+    // UI rather than an exit code.
+    for (const l of line.split("\n")) {
+      if (l.startsWith("AWAITING_CONFIGURATION:")) {
+        state.awaitingConfig.push(l.replace("AWAITING_CONFIGURATION:", "").trim());
+      }
+    }
   });
 
   proc.on("error", (err) => {
@@ -231,6 +320,26 @@ function spawnWorker(camera: Camera, state: WorkerState, rows: CameraAnalytics[]
     const key = groupKey(state.cameraId, state.module);
     if (state.stopping) {
       void setRuntime(state.featureIds, { status: "stopped", pid: null });
+      return;
+    }
+
+    if (code === EXIT_AWAITING_CONFIG) {
+      // Not a failure. Nothing is restarted: the operator has to draw the zone,
+      // and saving it issues a PATCH that restarts this worker anyway. The
+      // reason is stored so the UI can show it against the feature.
+      const why =
+        state.awaitingConfig.join(" | ") ||
+        "waiting to be configured before it can run";
+      console.log(`⏸ analytics ${tag} is awaiting configuration — ${why}`);
+      state.restartCount = 0;
+      state.failingAlertSent = false;
+      state.configBlocked = true;
+      void setRuntime(state.featureIds, {
+        status: "needs_config",
+        pid: null,
+        restartCount: 0,
+        lastError: why,
+      });
       return;
     }
 
@@ -386,6 +495,8 @@ export async function startWorkerGroup(
     staggerTimer: null,
     stopping: false,
     lastLicenceCheck: Date.now(),
+    awaitingConfig: [],
+    configBlocked: false,
   };
   state.stopping = false;
   state.featureIds = licensed.map((r) => r.id);
@@ -544,7 +655,15 @@ function startWatchdog(): void {
           }
         }
 
-        if (!running && !state?.backoffTimer && !state?.staggerTimer) {
+        // configBlocked: the worker told us it cannot run until somebody draws
+        // a zone. Respawning it on every tick would achieve nothing and cost a
+        // model load each time. Saving the configuration restarts it explicitly.
+        if (
+          !running &&
+          !state?.configBlocked &&
+          !state?.backoffTimer &&
+          !state?.staggerTimer
+        ) {
           await startWorkerGroup(g.cameraId, g.module);
         }
       }

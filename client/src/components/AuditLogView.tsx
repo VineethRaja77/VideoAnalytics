@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ShieldCheck, RefreshCw } from "lucide-react";
+import { formatDateTimeSeconds, timezoneLabel } from "@/lib/datetime";
 
 interface AuditRow {
   id: string;
@@ -78,14 +79,10 @@ function outcomeBadge(outcome: string) {
   return <Badge variant="secondary">ok</Badge>;
 }
 
-/** Compact but unambiguous — an auditor needs the date, not "2 hours ago". */
-function when(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    year: "numeric", month: "short", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
-}
+/** Compact but unambiguous — an auditor needs the date, not "2 hours ago",
+ *  and the SITE's clock rather than whichever one the reader happens to be in.
+ *  Seconds are kept because ordering within a minute is what an audit turns on. */
+const when = formatDateTimeSeconds;
 
 /**
  * Audit trail, client-admin and above.
@@ -157,7 +154,7 @@ export default function AuditLogView() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 pr-4 font-medium">When</th>
+                  <th className="p-3">When ({timezoneLabel()})</th>
                   <th className="py-2 pr-4 font-medium">Who</th>
                   <th className="py-2 pr-4 font-medium">Action</th>
                   <th className="py-2 pr-4 font-medium">Target</th>

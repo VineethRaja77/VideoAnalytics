@@ -1,3 +1,4 @@
+import { quotaWrite, QuotaError } from "./quotaWrite";
 // server/locationRoutes.ts
 //
 //   GET    /api/locations                 the tenant's whole tree, with counts
@@ -48,7 +49,7 @@ const assignSchema = z.object({
 
 /** Turns a LocationError into its intended status instead of a blanket 500. */
 function fail(res: any, err: unknown, context: string): void {
-  if (err instanceof LocationError) {
+  if (err instanceof LocationError || err instanceof QuotaError) {
     res.status(err.status).json({ error: err.message });
     return;
   }
@@ -112,6 +113,7 @@ export function registerLocationRoutes(app: Express): void {
       const orgId = resolveOrgScope(req);
       if (!orgId) return res.status(400).json({ error: "No organization context" });
       const body = createSchema.parse(req.body);
+
       const created = await createLocation(orgId, body);
 
       void audit(req, {
@@ -147,11 +149,14 @@ export function registerLocationRoutes(app: Express): void {
         const patch: Record<string, unknown> = {};
         if (body.name !== undefined) patch.name = body.name;
         if (body.kind !== undefined) patch.kind = body.kind;
-        const updated = await db
+        const update = async (executor: any) => executor
           .update(locations)
           .set(patch)
           .where(and(eq(locations.id, req.params.id), eq(locations.organizationId, orgId)))
           .returning();
+        const [current] = await db.select().from(locations).where(and(eq(locations.id, req.params.id), eq(locations.organizationId, orgId)));
+        if (!current) return res.status(404).json({ error: "Location not found" });
+        const updated = body.kind === "site" && current.kind !== "site" ? await quotaWrite(orgId, "maxSites", update) : await update(db);
         if (!updated.length) return res.status(404).json({ error: "Location not found" });
       }
 

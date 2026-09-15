@@ -167,3 +167,45 @@ if (process.argv[1] && process.argv[1].endsWith("modelRegistry.ts")) {
   if (process.argv.includes("--record")) recordManifest();
   else console.log(JSON.stringify(verifyAllModules(), null, 2));
 }
+
+export interface ModelReport { modules: ModuleCheck[]; checkedAt: string; }
+let modelReport: ModelReport | undefined;
+let modelPending: Promise<ModelReport> | undefined;
+const MODEL_REPORT_TTL = 5 * 60_000;
+
+/** Stream weights in bounded chunks. Never read entire model files on an HTTP request. */
+async function inspectModels(): Promise<ModelReport> {
+  let manifest: Record<string, Record<string, string>> = {};
+  try { manifest = JSON.parse(await fs.promises.readFile(MANIFEST_PATH, 'utf8')); } catch { /* surfaced as unverified */ }
+  const modules: ModuleCheck[] = [];
+  for (const [module, files] of Object.entries(REQUIRED_ARTIFACTS)) {
+    const artifacts: ArtifactCheck[] = [];
+    for (const file of files) {
+      const full = path.join(MODELS_BASE, module, file);
+      try {
+        const stat = await fs.promises.stat(full);
+        const hash = crypto.createHash('sha256');
+        for await (const chunk of fs.createReadStream(full)) hash.update(chunk);
+        const sha256 = hash.digest('hex');
+        const after = await fs.promises.stat(full);
+        const expected = manifest[module]?.[file];
+        artifacts.push({ file, present: true, sizeBytes: stat.size, sha256, expected,
+          matches: stat.mtimeMs !== after.mtimeMs || stat.size !== after.size ? false : expected ? expected === sha256 : undefined });
+      } catch { artifacts.push({ file, present: false }); }
+    }
+    const missing = artifacts.filter(a => !a.present).length;
+    const mismatch = artifacts.filter(a => a.matches === false).length;
+    modules.push({ module, artifacts, ok: !missing && !mismatch, reason: missing ? `${missing} file(s) missing or unreadable` : mismatch ? `${mismatch} checksum(s) failed` : undefined });
+  }
+  return { modules, checkedAt: new Date().toISOString() };
+}
+export function getModelReport(): Promise<ModelReport> {
+  if (modelReport && Date.now() - Date.parse(modelReport.checkedAt) < MODEL_REPORT_TTL) return Promise.resolve(modelReport);
+  if (!modelPending) modelPending = inspectModels().then(value => (modelReport = value)).finally(() => { modelPending = undefined; });
+  return modelPending;
+}
+/** Fast, stale-while-refreshing status with an explicit observation time. */
+export function modelSnapshot() {
+  void getModelReport().catch(err => console.error('Model verification failed:', err));
+  return { modules: modelReport?.modules ?? [], checkedAt: modelReport?.checkedAt ?? null, checking: !!modelPending };
+}

@@ -16,7 +16,7 @@ def emit(camera_id: str, violation: dict) -> None:
         "type": f"missing_{violation['item']}",
         "cameraId": camera_id,
         "trackId": violation.get("trackId"),
-        "at": datetime.datetime.utcnow().isoformat() + "Z",
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "details": violation,
         "snapshot": violation.get("snapshot"),
     }

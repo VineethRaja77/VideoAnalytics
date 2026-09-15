@@ -26,7 +26,7 @@ def emit(detail: dict) -> None:
         "eventId": str(uuid.uuid4()),
         "cameraId": config.CAMERA_ID,
         "trackId": detail.get("trackId"),
-        "at": datetime.datetime.utcnow().isoformat() + "Z",
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "details": detail,
         "snapshot": detail.get("snapshot"),
     }

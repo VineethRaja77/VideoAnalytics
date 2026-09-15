@@ -16,7 +16,7 @@ the depth on what it actually detects and why it is built the way it is.
 | [`ppe/`](ppe/) | helmet · vest · gloves · boots compliance | RF-DETR-S, 9 classes | yes | [→](ppe/README.md) |
 | [`vehicle/`](vehicle/) | 8 vehicle classes, counting, wrong-way, parking, congestion, triple-riding | RF-DETR-S on BMD-45 | yes | [→](vehicle/README.md) |
 | [`person/`](person/) | intrusion · footfall · loitering · crowd · queue · tailgating · fall | RF-DETR-S COCO, stock | **no** | [→](person/README.md) |
-| [`face/`](face/) | recognition against an enrolled gallery | YuNet + AuraFace | **frozen** | [→](face/README.md) |
+| [`face/`](face/) | recognition against an enrolled gallery, with unknown-face alerting/enrolment support | YuNet + AuraFace | **frozen** | [→](face/README.md) |
 | [`object/`](object/) | object left behind / removed | **none** | n/a | [→](object/README.md) |
 | [`tamper/`](tamper/) | lens blocked · defocused · camera moved · feed frozen | **none** | n/a | [→](tamper/README.md) |
 
